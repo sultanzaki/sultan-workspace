@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "dev:api": "node --env-file-if-exists=.env.local --watch server/index.js",
+    "dev:api": "node --watch scripts/dev-api.js",
     "dev:web": "vite",
     "db:local": "node scripts/dev-db.js",
     "db:migrate": "node --env-file-if-exists=.env.local server/cli.js migrate",
