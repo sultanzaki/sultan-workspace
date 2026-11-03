@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { transaction } from './db.js';
 import { queueMail } from './mail.js';
 import { createMaintenance } from './maintenance.js';
+import { bootstrap } from './bootstrap.js';
 import {
   email,
   password,
@@ -128,6 +129,19 @@ export async function createApp(pool, config) {
   app.get('/api/health', async (req, res) => {
     await pool.query('SELECT 1 FROM schema_migrations LIMIT 1');
     res.json({ status: 'ok' });
+  });
+  app.get('/api/auth/setup', async (req, res) => {
+    if (!config.BOOTSTRAP_TOKEN) return res.json({ available: false });
+    const users = await pool.query('SELECT 1 FROM users LIMIT 1');
+    res.json({ available: users.rowCount === 0 });
+  });
+  app.post('/api/auth/setup', async (req, res) => {
+    if (!config.BOOTSTRAP_TOKEN) fail(404, 'Setup owner belum diaktifkan atau sudah ditutup.');
+    await limit(pool, `owner-bootstrap:${req.ip}`, 5, 900);
+    const input = parse(z.object({ setupToken: z.string().min(32).max(256), email, name, workspace: name, password }).strict(), req.body);
+    if (!timingSafeEqual(Buffer.from(digest(input.setupToken)), Buffer.from(digest(config.BOOTSTRAP_TOKEN)))) fail(403, 'Kunci setup tidak sesuai.');
+    await bootstrap(pool, { email: input.email, name: input.name, workspace: input.workspace, password: input.password });
+    res.status(201).json({ message: 'Akun owner berhasil dibuat. Silakan login.' });
   });
   app.get('/api/internal/maintenance', async (req, res) => {
     if (!config.CRON_SECRET || !timingSafeEqual(Buffer.from(digest(req.get('authorization') || '')), Buffer.from(digest(`Bearer ${config.CRON_SECRET}`)))) {
