@@ -6,6 +6,9 @@ import { D, S, mem, pColor, proj, task, teamsList } from '../core/store.js';
 import { FT, av, filePrev, lbl, prPill, stPill } from '../ui/helpers.js';
 import { focusKey, render } from '../shell/render.js';
 import { teamModal } from '../features/teams.js';
+import { nativeAdminModal } from '../features/native-settings.js';
+import { planningModal } from '../features/planning.js';
+import { projectAllows } from '../core/permissions.js';
 import { getWorkspaceSession } from '../core/workspace-session.js';
 
 export function openModal(m) {
@@ -31,6 +34,11 @@ export function modalHtml(m) {
     `<div class="modal-h"><div><h2 id="mt-${m.type}">${title}</h2>${sub ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${sub}</div>` : ''}</div><button class="ibtn ibtn-sm" data-a="closeModal" aria-label="Close">${ic('x', 16)}</button></div>`;
   const wrap = (cls, inner) => `<div class="modal ${cls}" role="dialog" aria-modal="true" aria-labelledby="mt-${m.type}">${inner}</div>`;
   switch (m.type) {
+    case 'nativeAdmin':
+      return wrap('', nativeAdminModal(m, H));
+    case 'nativeMilestone':
+    case 'nativeEvent':
+      return wrap('', planningModal(m, H));
     case 'nativeCommentEdit':
       return wrap(
         '',
@@ -168,7 +176,7 @@ export function projectModal(m, H) {
         .map(t => `<option value="${t.id}" ${f.team === t.id ? 'selected' : ''}>${esc(t.name)}</option>`)
         .join('')}</select></div>
       <div class="field" style="flex:1;min-width:150px"><label class="label" for="p-lead">Lead</label><select class="select" id="p-lead" data-in="pform" data-f="lead">${D()
-        .members.filter(x => x.status === 'active')
+        .members.filter(x => x.status === 'active' && (!getWorkspaceSession() || x.role !== 'Guest'))
         .map(x => `<option value="${x.id}" ${f.lead === x.id ? 'selected' : ''}>${esc(x.name)}</option>`)
         .join('')}</select></div>
       <div class="field" style="flex:1;min-width:150px"><label class="label" for="p-due">Target date</label><input type="date" class="input" id="p-due" data-in="pform" data-f="due" value="${f.due || ''}"></div>
@@ -183,19 +191,20 @@ export function shareModal(m, H) {
   const p = proj(m.id);
   const session = getWorkspaceSession();
   if (session) {
-    const manager = ['owner', 'admin'].includes(session.workspace.role) || p.lead === session.user.id;
+    const manager = projectAllows(p, session.user.id, session.workspace.role, 'manage');
     return `${H(`Akses proyek “${esc(p.name)}”`)}
       <div class="modal-b">
         <label class="row"><input type="checkbox" data-in="nativeProjectPrivate" data-id="${p.id}" ${p.private ? 'checked' : ''} ${manager ? '' : 'disabled'}>Proyek privat</label>
-        <p class="muted">${p.private ? 'Hanya anggota terpilih, owner, dan admin workspace yang dapat membuka proyek ini.' : 'Semua anggota workspace dapat membuka dan mengedit proyek ini.'}</p>
+        <p class="muted">${p.private ? 'Hanya anggota terpilih, owner, dan admin workspace yang dapat membuka proyek ini.' : 'Anggota internal mewarisi akses edit. Guest perlu ditambahkan secara khusus. Izin khusus di bawah menggantikan akses bawaan.'}</p>
         <div class="eyebrow">Anggota proyek</div>
         ${D()
           .members.filter(member => member.status === 'active')
           .map(
             member =>
-              `<label class="row" style="padding:8px 0"><input type="checkbox" data-in="nativeProjectMember" data-id="${p.id}" data-mid="${member.id}" ${p.members.includes(member.id) ? 'checked' : ''} ${manager && member.id !== p.lead ? '' : 'disabled'}>${av(member.id, 'sm', false)}<span class="grow">${esc(member.name)}</span><span class="faint">${member.id === p.lead ? 'Project lead' : esc(member.role)}</span></label>`,
+              `<div class="row" style="padding:8px 0"><input type="checkbox" data-in="nativeProjectMember" data-id="${p.id}" data-mid="${member.id}" ${p.members.includes(member.id) ? 'checked' : ''} ${manager && member.id !== p.lead ? '' : 'disabled'}>${av(member.id, 'sm', false)}<span class="grow">${esc(member.name)}</span><span class="faint">${member.id === p.lead ? 'Project lead' : esc(member.role)}</span>${p.members.includes(member.id) && !['Owner', 'Admin'].includes(member.role) && member.id !== p.lead ? `<select class="select" data-in="nativeProjectPermission" data-id="${p.id}" data-user="${member.id}" aria-label="Izin ${esc(member.name)}" ${manager ? '' : 'disabled'}>${['viewer', 'commenter', 'editor'].map(level => `<option value="${level}" ${level === (p.permissions?.[member.id] || (member.role === 'Guest' ? 'viewer' : 'editor')) ? 'selected' : ''}>${level}</option>`).join('')}</select>` : ''}</div>`,
           )
           .join('')}
+        ${manager && (['owner', 'admin'].includes(session.workspace.role) || S.data.ws.settings.leadCanInviteGuests) ? `<button class="btn btn-secondary" data-a="nativeInvite" data-project="${p.id}">Undang guest</button>` : ''}${!manager ? `<button class="btn btn-secondary" data-a="nativeRequestAccess" data-id="${p.id}">Minta perubahan akses</button>` : ''}
       </div><div class="modal-f"><span class="sp"></span><button class="btn btn-primary" data-a="closeModal">Selesai</button></div>`;
   }
   p.perms = p.perms || {};

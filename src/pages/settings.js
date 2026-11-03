@@ -8,6 +8,7 @@ import { av, pIcon } from '../ui/helpers.js';
 import { permsTable, teamsGrid } from './members.js';
 import { page404 } from './errors.js';
 import { SHORTCUTS } from '../overlays/modals.js';
+import { NATIVE_SETTINGS, nativeSettingsBody } from '../features/native-settings.js';
 import { getWorkspaceSession } from '../core/workspace-session.js';
 
 export const SET_NAV = [
@@ -84,6 +85,7 @@ export function pageSettings() {
   </div>`;
 }
 export function settingsBody(sec, title) {
+  if (getWorkspaceSession() && NATIVE_SETTINGS.includes(sec)) return nativeSettingsBody(sec);
   if (getWorkspaceSession() && ['notif-push', 'notif-mentions', 'notif-assign'].includes(sec)) {
     const keys =
       sec === 'notif-mentions'

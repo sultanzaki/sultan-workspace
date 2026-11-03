@@ -38,20 +38,33 @@ export function workspaceData(value, saved) {
       ...ids.filter(id => !(value.content.preferences?.projectOrder || []).includes(id)),
     ];
   }
-  const roles = { owner: 'Owner', admin: 'Admin', member: 'Member' };
-  data.ws = { id: workspace.id, name: workspace.name, url: workspace.id, c: '#4B5BD6', brand: true };
-  data.workspaces = workspaces.map(ws => ({ id: ws.id, name: ws.name, c: '#4B5BD6', plan: '' }));
+  data.favorites = value.content?.preferences?.favorites || {
+    tasks: data.tasks.filter(t => t.fav).map(t => t.id),
+    projects: data.projects.filter(p => p.fav).map(p => p.id),
+  };
+  const directory = value.content?.directory || workspace;
+  const roles = { owner: 'Owner', admin: 'Admin', member: 'Member', guest: 'Guest' };
+  data.ws = {
+    id: workspace.id,
+    name: directory.name,
+    url: directory.slug || workspace.id,
+    c: directory.settings?.color || '#4B5BD6',
+    brand: directory.settings?.brand !== false,
+    settings: directory.settings || {},
+  };
+  data.workspaces = workspaces.map(ws => ({ id: ws.id, name: ws.name, slug: ws.slug, c: '#4B5BD6', plan: '' }));
   data.me = user.id;
-  data.members = workspace.members.map(member => ({
+  data.members = directory.members.map(member => ({
     ...member,
     role: roles[member.role],
-    title: roles[member.role],
-    c: '#4B5BD6',
+    title: member.title || roles[member.role],
+    c: member.color || '#4B5BD6',
+    avatar: member.avatar || null,
     status: member.active ? 'active' : 'deactivated',
-    team: workspace.teams.find(team => team.members.includes(member.id))?.id || '',
+    team: directory.teams.find(team => team.members.includes(member.id))?.id || '',
     last: null,
     tz: '',
   }));
-  data.teams = workspace.teams.map(team => ({ ...team, icon: 'users', c: '#4B5BD6', desc: '' }));
+  data.teams = directory.teams.map(team => ({ ...team, icon: 'users', c: '#4B5BD6', desc: '' }));
   return data;
 }

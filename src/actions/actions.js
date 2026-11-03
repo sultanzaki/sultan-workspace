@@ -928,6 +928,8 @@ A.react = el => {
 document.addEventListener('mousedown', e => {
   const b = e.target.closest('[data-cmd]');
   if (!b) return;
+  const session = getWorkspaceSession();
+  if (b.disabled || (session?.canProject && !session.canProject(proj(task(S.ui.drawer)?.project)))) return;
   e.preventDefault();
   const [cmd, arg] = b.dataset.cmd.split(':');
   if (cmd === 'createLink') {
@@ -945,7 +947,9 @@ document.addEventListener('mousedown', e => {
 document.addEventListener('input', e => {
   const ed = e.target.closest?.('[data-rte]');
   if (!ed) return;
-  const t = task(ed.dataset.rte);
+  const t = task(ed.dataset.rte),
+    session = getWorkspaceSession();
+  if (session?.canProject && !session.canProject(proj(t?.project))) return;
   if (t) {
     t.desc = ed.innerHTML;
     t.updated = Date.now();

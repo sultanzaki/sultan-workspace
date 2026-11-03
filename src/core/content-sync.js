@@ -1,4 +1,4 @@
-const collections = { project: 'projects', task: 'tasks', savedView: 'savedViews' };
+const collections = { project: 'projects', task: 'tasks', savedView: 'savedViews', event: 'events' };
 const clone = value => JSON.parse(JSON.stringify(value));
 const stable = value =>
   JSON.stringify(value, (key, item) =>
@@ -8,7 +8,7 @@ export function contentOperations(before, after) {
   const operations = [];
   for (const [entity, key] of Object.entries(collections)) {
     // Attachment metadata comes from the file API and is never a task edit.
-    const writable = value => (entity === 'task' ? { ...value, attachments: [] } : value);
+    const writable = value => (entity === 'task' ? { ...value, attachments: [], fav: false } : entity === 'project' ? { ...value, fav: false } : value);
     const old = new Map((before[key] || []).map(value => [value.id, writable(value)]));
     const current = new Map((after[key] || []).map(value => [value.id, writable(value)]));
     for (const [id, value] of current) if (stable(old.get(id)) !== stable(value)) operations.push({ entity, id, value });

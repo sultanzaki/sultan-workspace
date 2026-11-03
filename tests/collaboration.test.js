@@ -126,7 +126,7 @@ test('collaboration and automation persist real content with private access and 
     op('project', project('public')),
     op('project', project('private', { private: true })),
     op('task', task('publicTask')),
-    op('task', task('privateTask', 'private')),
+    op('task', task('privateTask', 'private', { assignee: first.userId })),
   ]);
   assert.equal(setup.status, 200, JSON.stringify(setup.data));
   let comment, file;
@@ -272,8 +272,12 @@ test('collaboration and automation persist real content with private access and 
   });
   await t.test('deadline jobs are idempotent, honor preferences and never notify inaccessible users', async () => {
     assert.equal(
-      (await write([op('task', task('deadline', 'public', { due: '2035-06-11' })), op('task', task('hiddenDeadline', 'private', { due: '2035-06-11' }))]))
-        .status,
+      (
+        await write([
+          op('task', task('deadline', 'public', { due: '2035-06-11' })),
+          op('task', task('hiddenDeadline', 'private', { due: '2035-06-11', assignee: first.userId })),
+        ])
+      ).status,
       200,
     );
     const run = () =>
@@ -284,7 +288,7 @@ test('collaboration and automation persist real content with private access and 
     const counts = await Promise.all([run(), run()]);
     assert.equal(
       counts.reduce((a, b) => a + b, 0),
-      1,
+      2,
     );
     const reminders = (await snapshot(user)).notifs.filter(n => n.task === 'deadline');
     assert.equal(reminders.length, 2);

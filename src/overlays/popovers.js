@@ -1,3 +1,4 @@
+import { eventSlot } from '../core/event-time.js';
 /* ---------------- POPOVERS ---------------- */
 import { $, MOD, MONL, TODAY, WD, addD, dOff, diffD, esc, fmtDate, iso, parse } from '../core/utils.js';
 import { ic, wsLogo } from '../core/icons.js';
@@ -345,9 +346,12 @@ export function popHtml(p) {
     }
     case 'event': {
       const e = D().events.find(x => x.id === p.id);
-      const pr = proj(e.project);
-      inner = `<div style="padding:10px 10px 6px"><div class="row" style="gap:8px;margin-bottom:6px"><span class="pdot" style="--c:${pColor(pr)};border-radius:50%"></span><b style="font-size:14px;font-weight:600">${esc(e.title)}</b></div><div class="muted" style="font-size:12.5px;display:flex;flex-direction:column;gap:4px"><span class="row" style="gap:6px">${ic('calendar', 13)}${fmtDate(e.date, true)} · ${e.time}</span><span class="row" style="gap:6px">${ic('folder', 13)}${esc(pr.name)}</span><span class="row" style="gap:6px">${ic('users', 13)}${avStack(pr.members, 5)}</span></div></div><div class="msep"></div><button class="mi" data-a="go" data-r="project" data-id="${pr.id}" data-tab="overview">${ic('arrow-up-right', 14)}Open project</button>`;
-      style = 'width:270px';
+      if (!e) break;
+      const pr = proj(e.project),
+        slot = eventSlot(e, S.prefs.tz, S.prefs.timeFmt);
+      inner = `<div style="padding:10px 10px 6px"><div class="row" style="gap:8px;margin-bottom:6px"><span class="pdot" style="--c:${pColor(pr)};border-radius:50%"></span><b style="font-size:14px;font-weight:600">${esc(e.title)}</b></div><div class="muted" style="font-size:12.5px;display:flex;flex-direction:column;gap:4px"><span class="row" style="gap:6px">${ic('calendar', 13)}${fmtDate(slot.date, true)} · ${esc(slot.label)} · ${esc(S.prefs.tz)}</span><span class="row" style="gap:6px">${ic('folder', 13)}${esc(pr.name)}</span><span class="row" style="gap:6px">${ic('users', 13)}${avStack(e.attendees || pr.members, 5)}</span></div></div><div class="msep"></div><button class="mi" data-a="go" data-r="project" data-id="${pr.id}" data-tab="overview">${ic('arrow-up-right', 14)}Open project</button>`;
+      inner += `<div style="padding:8px;white-space:pre-wrap;overflow-wrap:anywhere">${esc(e.description || '')}${e.location ? `<p>${esc(e.location)}</p>` : ''}${e.link && /^https?:\/\//.test(e.link) ? `<a href="${esc(e.link)}" target="_blank" rel="noopener noreferrer">Buka link meeting</a>` : ''}</div><button class="mi" data-a="nativeEditEvent" data-id="${e.id}">Edit event</button><button class="mi" data-a="nativeDeleteEvent" data-id="${e.id}">Hapus event</button>`;
+      style = 'width:320px';
       break;
     }
     case 'emoji':

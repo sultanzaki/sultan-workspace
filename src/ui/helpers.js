@@ -7,6 +7,8 @@ import { D, mem, pColor } from '../core/store.js';
 export function av(id, cls = '', tip = true) {
   const m = mem(id);
   if (!m) return `<span class="av empty ${cls}" ${tip ? 'data-tip="Unassigned"' : ''}>${ic('user', 11)}</span>`;
+  if (m.avatar)
+    return `<span class="av ${cls}" style="--c:${m.c};overflow:hidden" ${tip ? `data-tip="${esc(m.name)}"` : ''} aria-label="${esc(m.name)}"><img src="${esc(m.avatar)}" alt="" style="width:100%;height:100%;object-fit:cover"></span>`;
   const ini = m.name
     .split(' ')
     .map(x => x[0])

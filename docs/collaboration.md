@@ -43,7 +43,7 @@ Daily, Weekly, Every 2 weeks, dan Monthly memerlukan deadline. Ketika server men
 
 Nomor task ditetapkan dari data server, dan catatan occurrence mencegah retry atau reopen/complete membuat duplikasi. Task berikutnya sudah merupakan task tersendiri. Untuk mengubah atau menghentikan pengulangan selanjutnya, ubah aturan pada occurrence aktif yang sudah dibuat. Mengedit occurrence lama yang selesai tidak menghapus occurrence berikutnya.
 
-Pengingat mengikuti tanggal deadline dalam UTC: sehari sebelumnya, pada hari deadline, dan saat overdue. Setiap kategori dikirim satu kali untuk deadline dan penerima tersebut. Perubahan deadline memungkinkan pengingat baru. Task/proyek yang diarsipkan, task selesai, anggota nonaktif, dan penerima tanpa akses tidak diberi pengingat. Preferensi deadline dihormati.
+Pengingat mengikuti tanggal deadline dalam zona waktu penerima (UTC bila belum diatur): sehari sebelumnya, pada hari deadline, dan saat overdue. Setiap kategori dikirim satu kali untuk deadline dan penerima tersebut. Perubahan deadline memungkinkan pengingat baru. Task/proyek yang diarsipkan, task selesai, anggota nonaktif, dan penerima tanpa akses tidak diberi pengingat. Preferensi deadline dihormati.
 
 Pembuatan notifikasi dibatch agar jumlah anggota tidak menambah rangkaian query per penerima. Job memakai lock dan kunci event unik untuk mencegah duplikasi saat request/cron berjalan bersamaan; workspace yang masih segar dilewati. Setiap pemanggilan maintenance menangani hingga 25 workspace, dan workspace aktif juga diperiksa saat dibuka.
 

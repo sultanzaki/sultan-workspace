@@ -20,7 +20,7 @@ export const sod = d => {
   x.setHours(0, 0, 0, 0);
   return x;
 };
-export const TODAY = sod(new Date());
+export let TODAY = sod(new Date());
 export const iso = d => {
   const x = new Date(d);
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
@@ -43,6 +43,45 @@ export const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const WDL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 /* Set from preferences on every render (core/theme.js), so utils never depends on the store. */
 export let dateFormat = 'MMM d';
+let locale = 'en-US',
+  zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+export function setRegionalPreferences(p) {
+  locale = ['id-ID', 'Bahasa Indonesia'].includes(p.lang) ? 'id-ID' : 'en-US';
+  const legacy = {
+    '(GMT-07:00) Pacific Time': 'America/Los_Angeles',
+    '(GMT-08:00) Pacific Time': 'America/Los_Angeles',
+    '(GMT-05:00) Eastern Time': 'America/New_York',
+    '(GMT+00:00) London': 'Europe/London',
+    '(GMT+01:00) Berlin': 'Europe/Berlin',
+    '(GMT+08:00) Singapore': 'Asia/Singapore',
+  };
+  zone = legacy[p.tz] || p.tz || 'UTC';
+  try {
+    new Intl.DateTimeFormat(locale, { timeZone: zone }).format();
+  } catch {
+    zone = 'UTC';
+  }
+  p.tz = zone;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(new Date())
+      .map(x => [x.type, x.value]),
+  );
+  TODAY = new Date(Number(parts.year), Number(parts.month) - 1, Number(parts.day));
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(2024, i, 1);
+    MON[i] = d.toLocaleDateString(locale, { month: 'short' });
+    MONL[i] = d.toLocaleDateString(locale, { month: 'long' });
+  }
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(2024, 0, 7 + i);
+    WD[i] = d.toLocaleDateString(locale, { weekday: 'short' });
+    WDL[i] = d.toLocaleDateString(locale, { weekday: 'long' });
+  }
+}
+export function fmtInstant(value, p) {
+  return new Intl.DateTimeFormat(locale, { timeZone: zone, dateStyle: 'medium', timeStyle: 'short', hour12: p.timeFmt !== '24' }).format(new Date(value));
+}
 export function setDateFormat(f) {
   dateFormat = f || 'MMM d';
 }

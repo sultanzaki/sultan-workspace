@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { transaction } from './db.js';
 import { digest, fail, limit, membership } from './security.js';
-import { activity, contentAccess, notify, notifyMany } from './content-access.js';
+import { activity, contentAccess, notify, notifyMany, canReadProject } from './content-access.js';
 
 const uuid = z.string().uuid();
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
@@ -74,7 +74,7 @@ async function reserve(db, ws, user, mutation, hash) {
 async function mentionsFor(db, ws, project, input) {
   const people = (await db.query('SELECT u.id,u.name,m.role FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.workspace_id=$1 AND m.active', [ws]))
     .rows;
-  const allowed = people.filter(p => !project.private || ['owner', 'admin'].includes(p.role) || project.members.includes(p.id));
+  const allowed = people.filter(p => canReadProject(project, p.id, p.role));
   if (input.mentions.some(id => !allowed.some(person => person.id === id))) fail(400, 'Mention harus anggota aktif yang dapat mengakses proyek ini.');
   const typed = allowed.filter(person => input.text.includes('@' + person.name) && allowed.filter(p => p.name === person.name).length === 1).map(p => p.id);
   const selected = input.mentions.filter(id => allowed.some(person => person.id === id && input.text.includes('@' + person.name)));
@@ -164,7 +164,7 @@ export function registerCollaboration(app, pool, authenticated) {
       user = req.session.user_id;
     await limit(pool, `comments:${user}`, 90, 60);
     const comment = await transaction(pool, async db => {
-      const { project } = await contentAccess(db, ws, user, { task: id.parse(req.params.task) });
+      const { project } = await contentAccess(db, ws, user, { task: id.parse(req.params.task), action: 'comment' });
       const previous = await reserve(db, ws, user, input.id, digest('comment:' + req.params.task + JSON.stringify(input)));
       if (previous) {
         const old = (await db.query('SELECT * FROM task_comments WHERE id=$1 AND workspace_id=$2', [input.id, ws])).rows[0];
@@ -192,10 +192,10 @@ export function registerCollaboration(app, pool, authenticated) {
   async function accessComment(db, req) {
     const ws = req.params.ws,
       user = req.session.user_id;
-    await membership(db, ws, user, ['owner', 'admin', 'member'], true);
+    await membership(db, ws, user, ['owner', 'admin', 'member', 'guest'], true);
     const comment = (await db.query('SELECT * FROM task_comments WHERE id=$1 AND workspace_id=$2 FOR UPDATE', [uuid.parse(req.params.comment), ws])).rows[0];
     if (!comment) fail(404, 'Komentar tidak ditemukan.');
-    const access = await contentAccess(db, ws, user, { task: comment.task_id, lock: false });
+    const access = await contentAccess(db, ws, user, { task: comment.task_id, lock: false, action: 'comment' });
     return { comment, ...access };
   }
   app.patch(base + '/comments/:comment', authenticated, async (req, res) => {
@@ -267,7 +267,7 @@ export function registerCollaboration(app, pool, authenticated) {
     if (!bytes.length || bytes.length > MAX_FILE_BYTES) fail(413, 'Ukuran file maksimal 3 MB.');
     await limit(pool, `uploads:${req.session.user_id}`, 30, 60);
     const row = await transaction(pool, async db => {
-      const { project } = await contentAccess(db, req.params.ws, req.session.user_id, { project: input.project, task: input.task });
+      const { project } = await contentAccess(db, req.params.ws, req.session.user_id, { project: input.project, task: input.task, action: 'write' });
       const previous = await reserve(db, req.params.ws, req.session.user_id, input.id, digest('file:' + JSON.stringify(input)));
       if (previous) {
         const old = (await db.query(`SELECT ${FILE_COLUMNS} FROM project_files WHERE id=$1 AND workspace_id=$2`, [input.id, req.params.ws])).rows[0];
@@ -286,8 +286,8 @@ export function registerCollaboration(app, pool, authenticated) {
     });
     res.status(201).json(fileMetadata(row));
   });
-  async function accessFile(db, req, bytes = false, lock = true) {
-    await membership(db, req.params.ws, req.session.user_id, ['owner', 'admin', 'member'], lock);
+  async function accessFile(db, req, bytes = false, lock = true, action = 'write') {
+    await membership(db, req.params.ws, req.session.user_id, ['owner', 'admin', 'member', 'guest'], lock);
     const file = (
       await db.query(`SELECT ${FILE_COLUMNS}${bytes ? ',content' : ''} FROM project_files WHERE workspace_id=$1 AND id=$2`, [
         req.params.ws,
@@ -295,12 +295,12 @@ export function registerCollaboration(app, pool, authenticated) {
       ])
     ).rows[0];
     if (!file) fail(404, 'File tidak ditemukan.');
-    const access = await contentAccess(db, req.params.ws, req.session.user_id, { project: file.project_id, task: file.task_id, lock: false });
+    const access = await contentAccess(db, req.params.ws, req.session.user_id, { project: file.project_id, task: file.task_id, lock: false, action });
     return { file, ...access };
   }
   for (const action of ['download', 'preview'])
     app.get(base + `/files/:file/${action}`, authenticated, async (req, res) => {
-      const { file } = await transaction(pool, db => accessFile(db, req, true, false));
+      const { file } = await transaction(pool, db => accessFile(db, req, true, false, 'read'));
       if (action === 'preview' && !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.mime))
         fail(415, 'Pratinjau tersedia untuk PNG, JPEG, GIF, dan WebP. Unduh file untuk membukanya.');
       res.set('Content-Type', file.mime);
@@ -369,7 +369,7 @@ export function registerCollaboration(app, pool, authenticated) {
       .strict()
       .parse(req.body);
     await transaction(pool, async db => {
-      await membership(db, req.params.ws, req.session.user_id, ['owner', 'admin', 'member'], true);
+      await membership(db, req.params.ws, req.session.user_id, ['owner', 'admin', 'member', 'guest'], true);
       await db.query(
         `UPDATE user_notifications SET read_at=CASE WHEN $3 THEN now() ELSE NULL END WHERE workspace_id=$1 AND recipient_id=$2 AND ($4 OR id=ANY($5::uuid[]))`,
         [req.params.ws, req.session.user_id, input.read, input.all, input.ids],

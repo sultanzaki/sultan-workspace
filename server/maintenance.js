@@ -18,6 +18,8 @@ export function createMaintenance(pool, config) {
       if (Date.now() - cleanedAt > 60000) {
         await pool.query('DELETE FROM rate_limits WHERE expires_at < now()');
         await pool.query('DELETE FROM sessions WHERE expires_at < now()');
+        await pool.query('DELETE FROM login_challenges WHERE expires_at < now()');
+        await pool.query('UPDATE user_security SET pending_secret=NULL,pending_until=NULL WHERE pending_until<now()');
         await pool.query("DELETE FROM mail_outbox WHERE created_at < now() - interval '7 days'");
         await pool.query("DELETE FROM password_resets WHERE expires_at < now() - interval '1 day'");
         cleanedAt = Date.now();

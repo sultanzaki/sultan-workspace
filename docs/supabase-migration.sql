@@ -273,6 +273,108 @@ $migration_body$;
 END
 $migration_runner$;
 
+DO $migration_runner$
+DECLARE applied_checksum text;
+BEGIN
+  SELECT checksum INTO applied_checksum FROM app_private.schema_migrations WHERE name = '004_accounts_security.sql';
+  IF applied_checksum IS NULL THEN
+    EXECUTE $migration_body$ALTER TABLE users ADD COLUMN title text NOT NULL DEFAULT '' CHECK(length(title)<=100);
+ALTER TABLE users ADD COLUMN avatar_color text NOT NULL DEFAULT '#4B5BD6' CHECK(avatar_color ~ '^#[0-9A-Fa-f]{6}$');
+ALTER TABLE users ADD COLUMN avatar bytea CHECK(octet_length(avatar)<=262144);
+ALTER TABLE users ADD COLUMN avatar_mime text;
+ALTER TABLE users ADD COLUMN avatar_updated_at timestamptz;
+ALTER TABLE sessions ADD COLUMN id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE;
+ALTER TABLE sessions ADD COLUMN user_agent text NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN mfa_verified_at timestamptz;
+CREATE TABLE user_security (
+  user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  enabled boolean NOT NULL DEFAULT false,
+  secret text,
+  pending_secret text,
+  pending_until timestamptz,
+  last_counter bigint NOT NULL DEFAULT -1
+);
+CREATE TABLE recovery_codes (
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash text NOT NULL,
+  PRIMARY KEY(user_id,code_hash)
+);
+CREATE TABLE login_challenges (
+  token_hash text PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  remember boolean NOT NULL DEFAULT false,
+  password_hash text NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX login_challenges_expiry_idx ON login_challenges(expires_at);
+$migration_body$;
+    INSERT INTO app_private.schema_migrations(name, checksum) VALUES ('004_accounts_security.sql', 'f6ca0ce2be0d07053bc207dcde10455411a9f79fde8dc7b51aa34e3d2b56badf');
+  ELSIF applied_checksum <> 'f6ca0ce2be0d07053bc207dcde10455411a9f79fde8dc7b51aa34e3d2b56badf' THEN
+    RAISE EXCEPTION 'Applied migration changed: 004_accounts_security.sql';
+  END IF;
+END
+$migration_runner$;
+
+DO $migration_runner$
+DECLARE applied_checksum text;
+BEGIN
+  SELECT checksum INTO applied_checksum FROM app_private.schema_migrations WHERE name = '005_administration.sql';
+  IF applied_checksum IS NULL THEN
+    EXECUTE $migration_body$ALTER TABLE memberships DROP CONSTRAINT memberships_role_check;
+ALTER TABLE memberships ADD CONSTRAINT memberships_role_check CHECK(role IN ('owner','admin','member','guest'));
+ALTER TABLE invitations DROP CONSTRAINT invitations_role_check;
+ALTER TABLE invitations ADD CONSTRAINT invitations_role_check CHECK(role IN ('admin','member','guest'));
+ALTER TABLE invitations ADD COLUMN delivery text NOT NULL DEFAULT 'email' CHECK(delivery IN ('email','link'));
+ALTER TABLE invitations ADD COLUMN project_id text;
+ALTER TABLE invitations ADD COLUMN project_permission text CHECK(project_permission IN ('viewer','commenter','editor'));
+ALTER TABLE invitations ADD FOREIGN KEY(workspace_id,project_id) REFERENCES projects(workspace_id,id) ON DELETE CASCADE;
+ALTER TABLE workspaces ADD COLUMN slug text UNIQUE CHECK(slug ~ '^[a-z0-9][a-z0-9-]{2,59}$');
+ALTER TABLE workspaces ADD COLUMN settings jsonb NOT NULL DEFAULT '{}';
+CREATE TABLE project_access_requests (
+  id uuid PRIMARY KEY,
+  workspace_id uuid NOT NULL,
+  project_id text NOT NULL,
+  user_id uuid NOT NULL,
+  permission text NOT NULL CHECK(permission IN ('viewer','commenter','editor')),
+  reason text NOT NULL DEFAULT '' CHECK(length(reason)<=1000),
+  status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+  decided_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  decided_at timestamptz,
+  UNIQUE(workspace_id,project_id,user_id),
+  FOREIGN KEY(workspace_id,project_id) REFERENCES projects(workspace_id,id) ON DELETE CASCADE,
+  FOREIGN KEY(workspace_id,user_id) REFERENCES memberships(workspace_id,user_id) ON DELETE CASCADE
+);
+$migration_body$;
+    INSERT INTO app_private.schema_migrations(name, checksum) VALUES ('005_administration.sql', 'f06275025aea1f30ffcfe0c0c0ed08a2163338e089cf5c7ba3a6e0396906f947');
+  ELSIF applied_checksum <> 'f06275025aea1f30ffcfe0c0c0ed08a2163338e089cf5c7ba3a6e0396906f947' THEN
+    RAISE EXCEPTION 'Applied migration changed: 005_administration.sql';
+  END IF;
+END
+$migration_runner$;
+
+DO $migration_runner$
+DECLARE applied_checksum text;
+BEGIN
+  SELECT checksum INTO applied_checksum FROM app_private.schema_migrations WHERE name = '006_planning.sql';
+  IF applied_checksum IS NULL THEN
+    EXECUTE $migration_body$CREATE TABLE calendar_events (
+  workspace_id uuid NOT NULL,
+  id text NOT NULL,
+  project_id text NOT NULL,
+  data jsonb NOT NULL,
+  PRIMARY KEY(workspace_id,id),
+  FOREIGN KEY(workspace_id,project_id) REFERENCES projects(workspace_id,id) ON DELETE CASCADE
+);
+CREATE INDEX calendar_events_project_idx ON calendar_events(workspace_id,project_id);
+$migration_body$;
+    INSERT INTO app_private.schema_migrations(name, checksum) VALUES ('006_planning.sql', '687af10db10ccb1103f79c5f7d4c7dac24b046c760605666d8943cfca195d7c2');
+  ELSIF applied_checksum <> '687af10db10ccb1103f79c5f7d4c7dac24b046c760605666d8943cfca195d7c2' THEN
+    RAISE EXCEPTION 'Applied migration changed: 006_planning.sql';
+  END IF;
+END
+$migration_runner$;
+
 COMMIT;
 
 -- Supabase SQL Editor displays this status instead of the lock's empty result.
