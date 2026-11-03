@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { transaction } from './db.js';
 import { email, password, name, hashPassword, parse, fail } from './security.js';
 
-// CLI only: there is deliberately no public first-user registration endpoint.
+// Shared by the private CLI and optional secret-protected first-owner setup.
 export async function bootstrap(pool, input) {
   const data = parse(z.object({ email, password, name, workspace: name }), input);
   const hash = await hashPassword(data.password);

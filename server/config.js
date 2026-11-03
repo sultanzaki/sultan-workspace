@@ -43,6 +43,7 @@ export function readConfig(env = process.env) {
         .max(20)
         .default(serverless ? 2 : 10),
       CRON_SECRET: z.string().min(32).optional(),
+      BOOTSTRAP_TOKEN: z.string().min(32).max(256).optional(),
     })
     .safeParse(env);
   if (!result.success) configError('CONFIG_INVALID', 'Invalid environment configuration', [...new Set(result.error.issues.map(issue => issue.path.join('.')))]);

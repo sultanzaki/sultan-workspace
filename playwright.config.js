@@ -27,6 +27,7 @@ export default defineConfig({
       MAIL_TRANSPORT: 'file',
       MAIL_DIRECTORY: '.local/e2e-mail',
       PORT: '3001',
+      BOOTSTRAP_TOKEN: 'browser-only-setup-token-not-for-deployment-123',
     },
   },
 });

@@ -47,13 +47,23 @@ Jangan menggunakan password contoh. CLI menerima password melalui stdin, bukan a
 
 Development memakai `MAIL_TRANSPORT=file`: email hanya ditulis ke `.local/mail/*.json`, **tidak dikirim ke penerima**. File tersebut memuat tautan sensitif; jangan dibagikan, dimasukkan Git, atau diunggah sebagai artefak CI. Aplikasi production menolak mode file. Tanpa konfigurasi SMTP, production memakai `MAIL_TRANSPORT=disabled`: login dan administrasi tetap berjalan, sedangkan undangan dan reset lewat email dinonaktifkan secara eksplisit. Backend membersihkan isi email yang sudah dikirim dari outbox database dan menghapus pesan outbox yang lebih dari tujuh hari.
 
+## Membuat owner lewat website Vercel (tanpa terminal dan SMTP)
+
+1. Setelah merge fitur setup dan deployment selesai, buka **Vercel → Settings → Environment Variables**.
+2. Tambahkan **`BOOTSTRAP_TOKEN`** pada environment **Production**. Isi dengan kunci acak dari password generator, minimal 32 karakter (disarankan 64). Simpan kunci untuk langkah berikutnya; tidak perlu mengirimnya melalui chat.
+3. **Redeploy** agar backend membaca kunci tersebut.
+4. Buka **`https://sultan-workspace.vercel.app/#setup`**. Isi kunci setup, nama lengkap, email owner, nama workspace, dan password akun (minimal 12 karakter), kemudian klik **Buat akun owner**.
+5. Setelah berhasil, login dengan email/password yang baru dibuat. Hapus `BOOTSTRAP_TOKEN` dari pengaturan Vercel, lalu redeploy.
+
+Halaman setup tidak aktif tanpa kunci di environment. Backend memeriksa kunci, origin request, input, dan rate limit; transaksi database dengan advisory lock memastikan hanya satu akun pertama dapat dibuat. Setelah ada user, pembuatan owner terkunci meskipun kunci belum dihapus. Kunci dan password hanya dikirim lewat body request HTTPS, tidak dimasukkan ke URL atau localStorage, tidak disertakan dalam respons, dan tidak dicatat pada audit. Operator yang memegang kunci dipercaya menentukan email owner pertama; proses ini tidak memerlukan SMTP. Akun berikutnya tetap melalui undangan.
+
 ## Menggunakan Supabase PostgreSQL
 
 1. Buat/pilih project Supabase dan buka panel **Connect**. Gunakan direct connection jika host mendukung IPv6, atau **session pooler port 5432** jika membutuhkan IPv4. Hindari transaction pooler port 6543 untuk workflow ini, terutama migrasi dan pengaturan koneksi.
 2. Masukkan `DATABASE_URL` pada secret manager hosting/backend. Untuk lokal, gunakan `.env.local` yang diabaikan Git. Tidak perlu mengaktifkan Supabase Auth atau memberikan API key.
 3. Koneksi remote selalu menggunakan TLS dengan verifikasi sertifikat aktif. Jika diperlukan, unduh sertifikat CA database dari project Supabase dan set `DATABASE_CA_FILE` ke file tersebut. Jangan menggunakan `rejectUnauthorized=false` atau menonaktifkan TLS.
 4. Jalankan `npm run db:migrate` dari koneksi yang berwenang membuat schema/tabel. Migrasi memakai transaksi, advisory lock, dan checksum; aman dijalankan ulang. Jangan mengubah file migrasi yang telah diterapkan: tambahkan migrasi baru.
-5. Buat owner dengan CLI di atas. SMTP dapat menyusul; tanpa SMTP, login owner tetap tersedia tetapi undangan dan reset melalui email belum tersedia.
+5. Buat owner melalui halaman setup satu kali di bawah atau CLI di atas. SMTP dapat menyusul; tanpa SMTP, login owner tetap tersedia tetapi undangan dan reset melalui email belum tersedia.
 
 Schema `app_private` tidak boleh ditambahkan ke daftar exposed schemas Supabase. Migrasi mencabut akses schema dari PUBLIC dan role `anon`/`authenticated` bila tersedia. Migrasi pertama tidak mengubah tabel proyek Supabase lain. Gunakan database/project development terpisah dari production.
 
@@ -75,7 +85,7 @@ select name, applied_at from app_private.schema_migrations;
 
 Jika file versi sebelumnya hanya menampilkan kolom kosong `pg_advisory_xact_lock`, itu adalah hasil normal langkah penguncian. Query pemeriksaan di atas memastikan apakah seluruh migrasi sudah selesai.
 
-File ini dihasilkan dari migrasi yang sama dengan CLI. Pengembang dapat membuat ulang melalui `node scripts/export-migrations.js > docs/supabase-migration.sql`. Tidak ada password atau connection string di file migrasi. Migrasi membuat tabel, **bukan membuat akun login**; owner pertama tetap dibuat melalui CLI privat.
+File ini dihasilkan dari migrasi yang sama dengan CLI. Pengembang dapat membuat ulang melalui `node scripts/export-migrations.js > docs/supabase-migration.sql`. Tidak ada password atau connection string di file migrasi. Migrasi membuat tabel, **bukan membuat akun login**; owner pertama dibuat melalui halaman setup berkunci atau CLI privat.
 
 ## Deployment Vercel
 
@@ -84,7 +94,7 @@ File ini dihasilkan dari migrasi yang sama dengan CLI. Pengembang dapat membuat 
 3. Set `APP_ORIGIN=https://sultan-workspace.vercel.app` untuk domain utama Anda (ubah jika memakai domain sendiri). Bila tidak diisi, backend menggunakan metadata domain Vercel yang disediakan platform. Nilai harus tanpa slash terakhir atau path.
 4. Tanpa SMTP, biarkan `MAIL_TRANSPORT` tidak diisi atau isi `disabled`. Jangan memakai `file` di Vercel. Saat SMTP tersedia, set konfigurasi SMTP di atas.
 5. Jika database memerlukan CA khusus, isi `DATABASE_CA_PEM` dengan sertifikat CA database dari Supabase. Verifikasi TLS tidak dinonaktifkan. `DB_POOL_MAX` default 2 per instance function dan pool didaftarkan melalui `attachDatabasePool` agar koneksi idle dapat dilepas saat instance dihentikan.
-6. Jalankan migrasi melalui SQL Editor di atas atau CLI privat. Buat akun owner dengan CLI. Jangan menaruh migrasi/bootstrap pada build atau endpoint publik.
+6. Jalankan migrasi melalui SQL Editor di atas atau CLI privat. Buat akun owner melalui setup berkunci atau CLI. Migrasi tidak dijalankan pada build; pembuatan owner melalui web hanya aktif jika operator mengatur kunci setup.
 7. Redeploy setelah mengubah environment variables. Buka `/api/health`: hasil normal adalah `{"status":"ok"}`. Tanpa sesi login, `/api/auth/me` semestinya mengembalikan JSON 401, bukan halaman 404 Vercel. Bila migrasi belum dijalankan, API mengembalikan JSON 503 dengan instruksi migrasi. Log inisialisasi sekarang menyebut kode, tahap (`configuration`, `pool`, `database`, atau `application`), dan nama isian terkait; tidak mencetak nilai kredensial. Contoh: `DATABASE_TIMEOUT` berarti koneksi belum tercapai, sedangkan `APP_ORIGIN_INVALID` berarti format domain perlu diperbaiki.
 
 Saat email diaktifkan, proses pengiriman dicoba sesudah request. Agar retry tetap berjalan ketika tidak ada pengunjung, gunakan scheduler yang memanggil `GET /api/internal/maintenance` dengan header `Authorization: Bearer <CRON_SECRET>`, lalu set `CRON_SECRET` acak minimal 32 karakter di Vercel. Setiap pemanggilan menangani maksimal satu pesan. Pilih frekuensi yang sesuai jumlah pesan dan masa berlaku token (reset 30 menit). Tidak ada jadwal cron yang diaktifkan otomatis: Vercel Hobby hanya mengizinkan cron harian sehingga tidak cukup untuk retry reset password tepat waktu; gunakan paket/scheduler yang mendukung interval lebih sering sebelum mengandalkan email operasional. Endpoint menolak request tanpa secret. Selama email disabled, pengaturan scheduler tidak diperlukan untuk login.

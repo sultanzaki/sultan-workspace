@@ -18,6 +18,7 @@ const state = {
   token: '',
   busy: false,
   features: { email: false },
+  setupAvailable: false,
 };
 const root = document.querySelector('#app');
 document.body.classList.add('foundation-mode');
@@ -99,6 +100,11 @@ async function refresh(id) {
   await loadWorkspace(id);
 }
 function authContent() {
+  if (state.view === 'setup') {
+    if (!state.setupAvailable)
+      return '<h1>Setup owner tidak tersedia</h1><p>Setup belum diaktifkan atau akun pertama sudah dibuat. Jika akun sudah tersedia, lanjutkan ke login.</p><button class="btn" data-action="login-view">Ke login</button>';
+    return `<h1>Buat akun owner</h1><p class="sub">Setup sekali pakai untuk pemilik workspace. Gunakan kunci setup yang Anda simpan di Vercel.</p><form data-form="owner-setup">${field('Kunci setup', 'setupToken', 'password', '', 'autocomplete="off" minlength="32" maxlength="256"')}${field('Nama lengkap', 'name', 'text', '', 'autocomplete="name" maxlength="100"')}${field('Email owner', 'email', 'email', '', 'autocomplete="username"')}${field('Nama workspace', 'workspace', 'text', '', 'maxlength="100"')}${field('Password baru', 'password', 'password', '', 'autocomplete="new-password" minlength="12" maxlength="128"')}${field('Ulangi password', 'confirmation', 'password', '', 'autocomplete="new-password" minlength="12" maxlength="128"')}${submit('Buat akun owner')}</form>`;
+  }
   if (state.view === 'invite') {
     if (!state.invite)
       return '<h1>Undangan tidak tersedia</h1><p>Minta admin mengirim undangan baru.</p><button class="btn" data-action="login-view">Ke login</button>';
@@ -174,6 +180,22 @@ root.addEventListener('submit', event => {
     const base = `/workspaces/${state.workspace?.id}`;
     let notice = 'Perubahan disimpan.';
     switch (form.dataset.form) {
+      case 'owner-setup':
+        if (data.password !== data.confirmation) throw new Error('Konfirmasi password belum sesuai.');
+        await api('/auth/setup', 'POST', {
+          setupToken: data.setupToken,
+          email: data.email,
+          name: data.name,
+          workspace: data.workspace,
+          password: data.password,
+        });
+        form.reset();
+        state.setupAvailable = false;
+        state.view = 'login';
+        history.replaceState(null, '', location.pathname + location.search);
+        render();
+        message('Akun owner berhasil dibuat. Silakan login. Setelah ini, hapus BOOTSTRAP_TOKEN dari Vercel.');
+        return;
       case 'login':
         await api('/auth/login', 'POST', { email: data.email, password: data.password, remember: values.has('remember') });
         await refresh();
@@ -246,6 +268,7 @@ root.addEventListener('click', event => {
         break;
       case 'login-view':
         state.view = 'login';
+        if (location.hash === '#setup') history.replaceState(null, '', location.pathname + location.search);
         render();
         break;
       case 'refresh':
@@ -287,6 +310,8 @@ async function boot() {
   state.invite = null;
   state.token = '';
   state.view = 'login';
+  const setup = location.hash === '#setup';
+  if (setup) state.view = 'setup';
   const hash = location.hash.slice(1).match(/^(invite|reset)=([a-f0-9]{64})$/);
   if (hash) {
     state.token = hash[2];
@@ -299,7 +324,8 @@ async function boot() {
     } catch (error) {
       if (error.status !== 401) throw error;
     }
-    if (hash?.[1] === 'invite') state.invite = await api('/auth/invitations/inspect', 'POST', { token: state.token });
+    if (setup) state.setupAvailable = (await api('/auth/setup')).available;
+    else if (hash?.[1] === 'invite') state.invite = await api('/auth/invitations/inspect', 'POST', { token: state.token });
     else if (!hash && state.user) state.view = 'workspace';
     render();
   } catch (error) {
@@ -309,6 +335,6 @@ async function boot() {
 }
 // Email links may be opened in an already-running tab without a document reload.
 window.addEventListener('hashchange', () => {
-  if (/^#(invite|reset)=[a-f0-9]{64}$/.test(location.hash)) void boot();
+  if (location.hash === '#setup' || /^#(invite|reset)=[a-f0-9]{64}$/.test(location.hash)) void boot();
 });
 void boot();
