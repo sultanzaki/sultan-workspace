@@ -276,6 +276,21 @@ svg.logo {
   min-height: 0;
   background: var(--surface);
 }
+.native-workspace-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px var(--gutter);
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.native-workspace-notice > span {
+  flex: 1;
+  min-width: 160px;
+}
 .topbar {
   height: var(--topbar-h);
   flex-shrink: 0;

@@ -3,6 +3,7 @@ import '../styles/base.css';
 import '../styles/components.css';
 import './foundation.css';
 import { readApiResponse } from './http.js';
+import { setWorkspaceSession } from '../core/workspace-session.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const state = {
@@ -21,6 +22,7 @@ const state = {
   setupAvailable: null,
 };
 const root = document.querySelector('#app');
+const managementView = new URLSearchParams(location.search).get('manage') === '1';
 document.body.classList.add('foundation-mode');
 document.querySelectorAll('link[data-font]').forEach(link => {
   link.media = 'all';
@@ -81,7 +83,7 @@ async function loadSession() {
   const session = await api('/auth/me');
   Object.assign(state, session);
 }
-async function loadWorkspace(id = state.workspace?.id) {
+async function loadWorkspace(id = state.workspace?.id || new URLSearchParams(location.search).get('workspace')) {
   const selected = state.workspaces.find(w => w.id === id) || state.workspaces[0];
   state.workspace = null;
   state.invitations = [];
@@ -89,7 +91,7 @@ async function loadWorkspace(id = state.workspace?.id) {
   state.mail = [];
   if (!selected) return;
   state.workspace = await api(`/workspaces/${selected.id}`);
-  if (canManage()) {
+  if (canManage() && managementView) {
     [state.invitations, state.audit, state.mail] = await Promise.all(
       ['invitations', 'audit', 'mail-status'].map(part => api(`/workspaces/${selected.id}/${part}`)),
     );
@@ -167,9 +169,19 @@ function invitationContent() {
     <details><summary>Status pengiriman email undangan</summary><ul>${state.mail.map(mail => `<li>${esc(mail.recipient)} · ${mail.sent_at ? 'Terkirim ke layanan email' : mail.attempts ? 'Pengiriman gagal, dijadwalkan ulang' : 'Menunggu pengiriman'}</li>`).join('') || '<li>Belum ada pengiriman.</li>'}</ul></details></section>`;
 }
 function render() {
+  if (state.user && state.workspace && state.view === 'workspace' && !managementView) {
+    root.innerHTML = '<main class="foundation-main" role="status">Membuka workspace…</main>';
+    setWorkspaceSession({ user: state.user, workspace: state.workspace, workspaces: state.workspaces, csrfToken: state.csrfToken });
+    document.body.classList.remove('foundation-mode');
+    void import('../native-workspace.js').catch(() => {
+      root.innerHTML =
+        '<main class="foundation-main"><p role="alert">Workspace belum dapat dimuat. Silakan muat ulang halaman.</p><a href="/?manage=1">Kelola akun dan workspace</a></main>';
+    });
+    return;
+  }
   document.documentElement.lang = 'id';
   document.title = state.user && state.view === 'workspace' ? `${state.workspace?.name || 'Workspace'} · Gr8r Studio` : 'Akun tim · Gr8r Studio';
-  root.innerHTML = `<div class="foundation"><header class="foundation-header"><strong>Gr8r Studio</strong>${state.user ? `<div class="row"><span>${esc(state.user.name)}</span><button class="btn btn-ghost" data-action="logout">Logout</button></div>` : '<span>Akun tim</span>'}</header><main class="foundation-main ${state.view !== 'workspace' ? 'foundation-auth' : ''}"><div id="foundation-message" tabindex="-1" aria-live="polite"></div>${state.view === 'workspace' && state.user ? `<div class="foundation-switch"><label for="workspace-select">Workspace</label><select class="input" id="workspace-select">${state.workspaces.map(w => `<option value="${w.id}" ${w.id === state.workspace?.id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>${workspaceContent()}<details class="foundation-panel"><summary>Buat workspace baru</summary><form data-form="create-workspace" class="foundation-inline">${field('Nama workspace baru', 'name', 'text', '', 'maxlength="100"')}${submit('Buat workspace')}</form></details>` : `<section class="foundation-panel">${authContent()}</section>`}</main></div>`;
+  root.innerHTML = `<div class="foundation"><header class="foundation-header"><strong>Gr8r Studio</strong>${state.user ? `<div class="row">${state.workspace ? `<a class="btn" href="/?workspace=${state.workspace.id}">Buka workspace</a>` : ''}<span>${esc(state.user.name)}</span><button class="btn btn-ghost" data-action="logout">Logout</button></div>` : '<span>Akun tim</span>'}</header><main class="foundation-main ${state.view !== 'workspace' ? 'foundation-auth' : ''}"><div id="foundation-message" tabindex="-1" aria-live="polite"></div>${state.view === 'workspace' && state.user ? `<div class="foundation-switch"><label for="workspace-select">Workspace</label><select class="input" id="workspace-select">${state.workspaces.map(w => `<option value="${w.id}" ${w.id === state.workspace?.id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>${workspaceContent()}<details class="foundation-panel"><summary>Buat workspace baru</summary><form data-form="create-workspace" class="foundation-inline">${field('Nama workspace baru', 'name', 'text', '', 'maxlength="100"')}${submit('Buat workspace')}</form></details>` : `<section class="foundation-panel">${authContent()}</section>`}</main></div>`;
 }
 
 root.addEventListener('submit', event => {

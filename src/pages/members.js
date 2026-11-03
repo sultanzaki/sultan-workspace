@@ -7,6 +7,7 @@ import { av, avStack, empty, pIcon, pStatus, progBar } from '../ui/helpers.js';
 import { sortTasks } from '../shell/view-engine.js';
 import { actHtml, miniRow } from '../components/task-list.js';
 import { page404 } from './errors.js';
+import { getWorkspaceSession } from '../core/workspace-session.js';
 
 export function pageMembers() {
   const u = S.ui;
@@ -41,7 +42,7 @@ export function pageMembers() {
         const ot = allTasks().filter(t => t.assignee === m.id && t.status !== 'done').length;
         return `<tr data-ctx="member" data-id="${m.id}"><td style="padding-left:14px"><button class="row" data-a="go" data-r="member" data-id="${m.id}" style="gap:10px;text-align:left">${av(m.id, 'md', false)}<span class="col"><b style="font-weight:500">${esc(m.name)}${m.id === D().me ? ' <span class="faint" style="font-weight:400">(you)</span>' : ''}</b><span class="faint" style="font-size:12px">${esc(m.email)}</span></span></button></td>
       <td style="text-align:left">${isAdmin && m.role !== 'Owner' ? `<button class="pillbtn bordered" data-a="pop" data-pop="role" data-id="${m.id}">${m.role}${ic('chevron-down', 12)}</button>` : `<span class="pillbtn">${m.role === 'Owner' ? ic('crown', 13) : ''}${m.role}</span>`}</td>
-      <td style="text-align:left"><span class="row">${ic(TM[m.team].icon, 13)}${TM[m.team].name}</span></td><td class="num">${ap}</td><td class="num">${ot}</td>
+      <td style="text-align:left"><span class="row">${ic(TM[m.team].icon, 13)}${esc(TM[m.team].name)}</span></td><td class="num">${ap}</td><td class="num">${ot}</td>
       <td style="text-align:left" class="muted">${m.last == null ? '—' : m.last < 5 ? '<span style="color:var(--green)">Online</span>' : ago(minsAgo(m.last))}</td>
       <td style="text-align:left">${m.status === 'invited' ? '<span class="badge amber"><span class="dot"></span>Invited</span>' : m.status === 'deactivated' ? '<span class="badge gray">Deactivated</span>' : '<span class="badge green"><span class="dot"></span>Active</span>'}</td>
       <td><button class="ibtn ibtn-sm" data-a="ctxBtn" data-ctx="member" data-id="${m.id}" aria-label="Member options">${ic('ellipsis', 14)}</button></td></tr>`;
@@ -54,6 +55,8 @@ export function pageMembers() {
   </div>`;
 }
 export function permsTable() {
+  if (getWorkspaceSession())
+    return '<div class="panel panel-b"><p>Owner mengelola owner/admin. Admin mengelola anggota biasa dan tim. Member dapat melihat workspace. Hak akses diperiksa oleh server.</p><button class="btn btn-secondary" data-a="nativeManage">Kelola workspace</button></div>';
   const rows = [
     ['View projects & tasks', 1, 1, 1, 1],
     ['Comment on tasks', 1, 1, 1, 1],
@@ -81,9 +84,9 @@ export function permsTable() {
 export function teamsGrid() {
   return `<div class="pgrid">${teamsList()
     .map(t => {
-      const ms = D().members.filter(m => m.team === t.id);
+      const ms = D().members.filter(m => (getWorkspaceSession() ? t.members.includes(m.id) : m.team === t.id));
       const ps = visibleProjects().filter(p => p.team === t.id);
-      return `<div class="pcard" data-a="go" data-r="team" data-id="${t.id}" role="link" tabindex="0"><div class="row"><span class="picon" style="--c:${t.c}">${ic(t.icon, 15)}</span><b style="font-weight:600;font-size:14px">${t.name}</b></div><div class="desc">${t.desc}</div><div class="foot"><span class="row" style="gap:4px">${ic('users', 12)}${ms.length} members</span><span class="row" style="gap:4px">${ic('folder', 12)}${ps.length} projects</span><span class="sp"></span>${avStack(
+      return `<div class="pcard" data-a="go" data-r="team" data-id="${t.id}" role="link" tabindex="0"><div class="row"><span class="picon" style="--c:${t.c}">${ic(t.icon, 15)}</span><b style="font-weight:600;font-size:14px">${esc(t.name)}</b></div><div class="desc">${esc(t.desc)}</div><div class="foot"><span class="row" style="gap:4px">${ic('users', 12)}${ms.length} members</span><span class="row" style="gap:4px">${ic('folder', 12)}${ps.length} projects</span><span class="sp"></span>${avStack(
         ms.map(m => m.id),
         4,
       )}</div></div>`;
@@ -96,11 +99,11 @@ export function pageTeams() {
 export function pageTeam() {
   const t = team(S.ui.params.id);
   if (!t) return page404();
-  const ms = D().members.filter(m => m.team === t.id);
+  const ms = D().members.filter(m => (getWorkspaceSession() ? t.members.includes(m.id) : m.team === t.id));
   const ps = visibleProjects().filter(p => p.team === t.id);
   const ts = allTasks().filter(x => ms.some(m => m.id === x.assignee) && x.status !== 'done');
   return `<div class="page">
-    <div class="ph"><div class="row" style="gap:12px"><span class="picon lg" style="--c:${t.c}">${ic(t.icon, 18)}</span><div><h1>${t.name}</h1><p style="margin:2px 0 0">${t.desc}</p></div></div><div class="acts"><button class="btn btn-secondary" data-a="editTeam" data-id="${t.id}">${ic('pencil', 14)}Edit team</button><button class="btn btn-secondary" data-a="invite">${ic('user-plus', 14)}Invite to workspace</button></div></div>
+    <div class="ph"><div class="row" style="gap:12px"><span class="picon lg" style="--c:${t.c}">${ic(t.icon, 18)}</span><div><h1>${esc(t.name)}</h1><p style="margin:2px 0 0">${esc(t.desc)}</p></div></div><div class="acts"><button class="btn btn-secondary" data-a="editTeam" data-id="${t.id}">${ic('pencil', 14)}Edit team</button><button class="btn btn-secondary" data-a="invite">${ic('user-plus', 14)}Invite to workspace</button></div></div>
     <div class="grid2"><div class="stack">
       <section class="panel"><div class="panel-h"><h2>Projects</h2><span class="faint">${ps.length}</span></div>${ps.map(p => `<div class="mini" data-a="go" data-r="project" data-id="${p.id}">${pIcon(p, '', 14)}<span class="tt">${esc(p.name)}</span>${pStatus(p.status)}<span class="row" style="width:120px">${progBar(progressOf(p.id))}</span></div>`).join('') || '<div class="panel-b faint">No projects</div>'}</section>
       <section class="panel"><div class="panel-h"><h2>Open tasks</h2><span class="faint">${ts.length}</span></div>${sortTasks(ts, { f: 'due', dir: 1 })
@@ -126,7 +129,7 @@ export function pageMember() {
     <div class="row" style="gap:18px;margin-bottom:22px;flex-wrap:wrap;align-items:flex-start">
       ${av(m.id, 'xl ' + (m.last != null && m.last < 5 ? 'presence' : ''), false)}
       <div class="grow" style="min-width:220px"><div class="row" style="gap:10px;flex-wrap:wrap"><h1 style="font-size:var(--fs-2xl);margin:0;font-weight:600;letter-spacing:-.02em">${esc(m.name)}</h1><span class="badge">${m.role === 'Owner' ? ic('crown', 11) : ''}${m.role}</span>${m.status === 'invited' ? '<span class="badge amber">Invite pending</span>' : ''}</div>
-        <div class="muted" style="margin-top:3px">${esc(m.title)} · ${TM[m.team].name}</div>
+        <div class="muted" style="margin-top:3px">${esc(m.title)} · ${esc(TM[m.team].name)}</div>
         <div class="row faint" style="margin-top:8px;gap:14px;font-size:12.5px;flex-wrap:wrap"><span class="row" style="gap:5px">${ic('mail', 13)}<span style="user-select:all">${esc(m.email)}</span></span><span class="row" style="gap:5px">${ic('map-pin', 13)}${esc(m.tz)}</span><span class="row" style="gap:5px">${ic('clock', 13)}${m.last == null ? 'Never signed in' : m.last < 5 ? 'Online now' : 'Active ' + ago(minsAgo(m.last))}</span></div></div>
       <div class="row"><button class="btn btn-secondary" data-a="copyText" data-text="${esc(m.email)}">${ic('copy', 14)}Copy email</button><button class="btn btn-primary" data-a="newTask" data-assignee="${m.id}">${ic('plus', 14)}Assign task</button><button class="ibtn" data-a="ctxBtn" data-ctx="member" data-id="${m.id}" aria-label="More">${ic('ellipsis', 16)}</button></div>
     </div>

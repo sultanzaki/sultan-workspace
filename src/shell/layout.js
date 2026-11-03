@@ -24,6 +24,7 @@ import { pageWsTimeline } from '../views/timeline.js';
 import { pageSettings } from '../pages/settings.js';
 import { pageStates, pageSystem } from '../pages/design-system.js';
 import { pageArchive } from '../features/archive.js';
+import { getWorkspaceSession } from '../core/workspace-session.js';
 
 export function renderShell() {
   const u = S.ui;
@@ -32,6 +33,7 @@ export function renderShell() {
     ${u.mnav ? '<div class="side-scrim" data-a="closeMnav"></div>' : ''}
     <main class="main" id="main">
       ${renderTopbar()}
+      ${getWorkspaceSession() ? '<div class="native-workspace-notice" role="status"><span>Proyek dan task tersimpan di browser ini; belum tersinkron ke tim.</span><button class="btn btn-sm btn-secondary" data-a="nativeManage">Kelola workspace</button><button class="btn btn-sm btn-ghost" data-a="nativeSignOut">Logout</button></div>' : ''}
       ${u.offline ? `<div class="offline-bar" role="alert">${ic('wifi-off', 15)}<span><b>You're offline.</b> Changes won't be saved until your connection is back.</span><span class="sp"></span><button class="btn btn-sm btn-secondary" data-a="retryOnline">Try again</button></div>` : ''}
       <div class="content ${u.fx.route ? 'fx-route' : ''}" id="main-content" tabindex="-1" data-keep="c:${u.route}:${u.params.id || ''}:${u.params.tab || ''}:${u.params.sec || ''}">${u.loading ? skeleton() : renderPage()}</div>
     </main>

@@ -2,8 +2,10 @@
 import { TODAY, diffD, iso, parse, uid } from './utils.js';
 import { PCOLORS, TEAMS_SEED } from './constants.js';
 import { seed } from '../data/seed.js';
+import { getWorkspaceSession, localWorkspaceKey, workspaceData } from './workspace-session.js';
 
-export const STORE_KEY = 'gr8r.v2';
+const workspaceSession = getWorkspaceSession();
+export const STORE_KEY = workspaceSession ? localWorkspaceKey(workspaceSession) : 'gr8r.v2';
 export const DEFAULT_PREFS = {
   theme: 'system',
   accent: 'indigo',
@@ -33,8 +35,13 @@ export function load() {
 }
 export const saved = load();
 export const S = {
-  data: saved?.data || seed(),
-  prefs: Object.assign({}, DEFAULT_PREFS, saved?.prefs || {}),
+  data: workspaceSession ? workspaceData(workspaceSession, saved?.data) : saved?.data || seed(),
+  prefs: Object.assign(
+    {},
+    DEFAULT_PREFS,
+    saved?.prefs || {},
+    workspaceSession ? { name: workspaceSession.user.name, title: workspaceSession.workspace.role } : {},
+  ),
   views: saved?.views || {},
   ui: {
     fx: {},
@@ -106,7 +113,7 @@ export const visibleProjects = () =>
     .projOrder.map(proj)
     .filter(Boolean)
     .filter(p => !p.archived);
-export const canSee = p => !p.private || p.members.includes(D().me);
+export const canSee = p => !!p && (!p.private || p.members.includes(D().me));
 export const tasksOf = pid => D().tasks.filter(t => t.project === pid && !t.archived);
 export const allTasks = () => D().tasks.filter(t => !t.archived && canSee(proj(t.project)));
 export const isOver = t => t.due && t.status !== 'done' && diffD(parse(t.due), TODAY) < 0;
