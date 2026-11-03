@@ -21,6 +21,12 @@ npm run db:migrate
 
 Buat owner pertama melalui `npm run owner:create` dengan JSON melalui stdin, kemudian jalankan `npm run dev`. Ikuti [panduan fondasi](docs/foundation.md) untuk format input, pengiriman email development, konfigurasi Supabase, SMTP, deployment, dan pengujian.
 
+## Vercel dan migrasi Supabase
+
+API Vercel tersedia melalui `api/[...path].js`; frontend dan backend dideploy bersama. Login tidak membutuhkan SMTP. Tanpa SMTP, undangan dan pemulihan lewat email ditampilkan sebagai belum tersedia.
+
+Untuk membuat tabel tanpa terminal, buka **Supabase → SQL Editor → New query**, salin seluruh [file migrasi SQL](docs/supabase-migration.sql), lalu klik **Run**. Setelah itu buat owner pertama melalui CLI privat. Panduan konfigurasi Vercel dan pemeriksaannya ada di [docs/foundation.md](docs/foundation.md).
+
 ## Status integrasi
 
 Halaman utama sekarang memakai akun dan data workspace yang disimpan di database. **Proyek, task, komentar, dan file dari UI prototype belum terhubung ke backend**; integrasinya adalah tahap berikutnya. Prototype tetap tersedia secara eksplisit pada development dan tidak masuk build production.

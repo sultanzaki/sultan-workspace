@@ -1,11 +1,12 @@
 import express from 'express';
 import helmet from 'helmet';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transaction } from './db.js';
 import { queueMail } from './mail.js';
+import { createMaintenance } from './maintenance.js';
 import {
   email,
   password,
@@ -31,6 +32,8 @@ const audit = (db, ws, actor, action, subject = null) =>
 
 export async function createApp(pool, config) {
   const app = express();
+  app.locals.maintain = createMaintenance(pool, config);
+  const emailEnabled = config.MAIL_TRANSPORT !== 'disabled';
   const production = config.NODE_ENV === 'production';
   const cookieName = production ? '__Host-sultan_session' : 'sultan_session';
   const cookieOptions = { httpOnly: true, secure: production, sameSite: 'lax', path: '/' };
@@ -61,7 +64,7 @@ export async function createApp(pool, config) {
     res.set('Cache-Control', 'no-store');
     res.set('Vary', 'Cookie');
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-      if (req.get('origin') !== config.APP_ORIGIN) return next(new HttpError(403, 'Origin permintaan tidak diizinkan.'));
+      if (!config.allowedOrigins.includes(req.get('origin'))) return next(new HttpError(403, 'Origin permintaan tidak diizinkan.'));
       if (!req.is('application/json')) return next(new HttpError(415, 'Gunakan application/json.'));
     }
     next();
@@ -126,12 +129,23 @@ export async function createApp(pool, config) {
     await pool.query('SELECT 1 FROM schema_migrations LIMIT 1');
     res.json({ status: 'ok' });
   });
+  app.get('/api/internal/maintenance', async (req, res) => {
+    if (!config.CRON_SECRET || !timingSafeEqual(Buffer.from(digest(req.get('authorization') || '')), Buffer.from(digest(`Bearer ${config.CRON_SECRET}`)))) {
+      fail(401, 'Akses tidak diizinkan.');
+    }
+    res.json(await app.locals.maintain({ maxMessages: 1 }));
+  });
   app.get('/api/auth/me', authenticated, async (req, res) => {
     const { rows } = await pool.query(
       'SELECT w.id,w.name,m.role FROM workspaces w JOIN memberships m ON m.workspace_id=w.id WHERE m.user_id=$1 AND m.active ORDER BY w.created_at,w.id',
       [req.session.user_id],
     );
-    res.json({ user: { id: req.session.user_id, email: req.session.email, name: req.session.name }, csrfToken: req.session.csrf_token, workspaces: rows });
+    res.json({
+      user: { id: req.session.user_id, email: req.session.email, name: req.session.name },
+      csrfToken: req.session.csrf_token,
+      workspaces: rows,
+      features: { email: emailEnabled },
+    });
   });
   app.post('/api/auth/login', async (req, res) => {
     const input = parse(z.object({ email, password: z.string().min(1).max(128), remember: z.boolean().default(false) }).strict(), req.body);
@@ -196,6 +210,7 @@ export async function createApp(pool, config) {
     res.status(201).json({ user: publicUser(result.user) });
   });
   app.post('/api/auth/forgot-password', async (req, res) => {
+    if (!emailEnabled) fail(503, 'Pengiriman email belum diaktifkan. Hubungi admin untuk pemulihan akun.');
     const input = parse(z.object({ email }).strict(), req.body);
     await authLimit(req, 'reset', input.email);
     await transaction(pool, async db => {
@@ -280,6 +295,7 @@ export async function createApp(pool, config) {
     res.json(rows);
   });
   app.post('/api/workspaces/:ws/invitations', async (req, res) => {
+    if (!emailEnabled) fail(503, 'Pengiriman email belum diaktifkan. Admin perlu mengatur SMTP sebelum mengirim undangan.');
     const input = parse(z.object({ email, role: z.enum(['admin', 'member']).default('member') }).strict(), req.body);
     await limit(pool, `invite:${req.session.user_id}`, 30, 3600);
     const id = randomUUID();
@@ -411,7 +427,7 @@ export async function createApp(pool, config) {
   });
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Endpoint tidak ditemukan.' }));
-  if (production) {
+  if (production && !config.serverless) {
     const dist = fileURLToPath(new URL('../dist/', import.meta.url));
     app.use(express.static(dist, { index: 'index.html' }));
     app.get('/{*path}', (req, res) => res.sendFile(path.join(dist, 'index.html')));

@@ -96,6 +96,10 @@ test('password recovery changes credentials and the old password stops working',
   await page.getByRole('button', { name: 'Login', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Email atau password tidak sesuai');
   await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
-  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  const [login] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/api/auth/login') && response.request().method() === 'POST'),
+    page.getByRole('button', { name: 'Login', exact: true }).click(),
+  ]);
+  expect(login.status(), await login.text()).toBe(200);
   await expect(page.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
 });

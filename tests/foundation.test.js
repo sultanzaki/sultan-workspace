@@ -358,7 +358,11 @@ test('production configuration refuses insecure origins and development mail', (
       }),
     /HTTPS/,
   );
-  assert.throws(() => readConfig({ NODE_ENV: 'production', DATABASE_URL: 'postgresql://localhost/db', APP_ORIGIN: 'https://workspace.example.test' }), /SMTP/);
+  assert.throws(
+    () =>
+      readConfig({ NODE_ENV: 'production', DATABASE_URL: 'postgresql://localhost/db', APP_ORIGIN: 'https://workspace.example.test', MAIL_TRANSPORT: 'file' }),
+    /SMTP/,
+  );
   const config = readConfig({ DATABASE_URL: 'postgresql://user:password@db.example.test/postgres?sslmode=disable' });
   assert.equal(config.database.ssl.rejectUnauthorized, true);
   assert.equal(new URL(config.database.connectionString).searchParams.has('sslmode'), false);

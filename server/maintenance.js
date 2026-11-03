@@ -1,0 +1,30 @@
+import { createMailer, deliverOne } from './mail.js';
+
+export function createMaintenance(pool, config) {
+  const deliver = createMailer(config);
+  let pending = null,
+    cleanedAt = 0;
+  return function maintain({ maxMessages = config.serverless ? 1 : 20 } = {}) {
+    if (pending) return pending;
+    pending = (async () => {
+      let processed = 0;
+      if (config.MAIL_TRANSPORT !== 'disabled') {
+        for (let i = 0; i < maxMessages; i++) {
+          if (!(await deliverOne(pool, deliver))) break;
+          processed++;
+        }
+      }
+      if (Date.now() - cleanedAt > 60000) {
+        await pool.query('DELETE FROM rate_limits WHERE expires_at < now()');
+        await pool.query('DELETE FROM sessions WHERE expires_at < now()');
+        await pool.query("DELETE FROM mail_outbox WHERE created_at < now() - interval '7 days'");
+        await pool.query("DELETE FROM password_resets WHERE expires_at < now() - interval '1 day'");
+        cleanedAt = Date.now();
+      }
+      return { processed };
+    })().finally(() => {
+      pending = null;
+    });
+    return pending;
+  };
+}
