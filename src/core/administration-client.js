@@ -10,6 +10,31 @@ export function initAdministration({ session, renderSynced }) {
     api = (path, method, body) => nativeApi(session, path, method, body),
     value = id => document.getElementById(id)?.value || '';
   const manager = () => ['owner', 'admin'].includes(session.workspace.role);
+  let loadingMail = false,
+    lastMail = 0;
+  async function loadMail() {
+    if (!manager() || loadingMail) return;
+    loadingMail = true;
+    lastMail = Date.now();
+    try {
+      session.mailStatus = await api(base + '/mail-status');
+      session.mailLoaded = true;
+      renderSynced();
+    } catch (error) {
+      toast(error.message, { kind: 'err' });
+    } finally {
+      loadingMail = false;
+    }
+  }
+  A.nativeLoadMail = () => {
+    void loadMail();
+  };
+  A.nativeRetryMail = el => {
+    void session.perform(async () => {
+      await api(base + '/mail/' + el.dataset.id + '/retry', 'POST', {});
+      await loadMail();
+    });
+  };
   let loading = false,
     lastAttempt = 0;
   async function loadAdministration() {
@@ -33,6 +58,7 @@ export function initAdministration({ session, renderSynced }) {
   const previous = session.onRender;
   session.onRender = () => {
     previous?.();
+    if (S.ui.route === 'settings' && S.ui.params.sec === 'notif-email' && Date.now() - lastMail > 30000 && !loadingMail) void loadMail();
     if (S.ui.route === 'settings' && ['members', 'teams', 'permissions'].includes(S.ui.params.sec) && Date.now() - lastAttempt > 30000 && !loading)
       void loadAdministration();
   };
@@ -95,6 +121,21 @@ export function initAdministration({ session, renderSynced }) {
         toast('Pilih dan salin link dari kotak undangan.', { kind: 'info' });
       });
   };
+  A.nativeResendInvitation = el => {
+    const invitation = session.invitations?.find(i => i.id === el.dataset.id);
+    if (!invitation) return;
+    void session.perform(async () => {
+      const input = {
+        email: invitation.email,
+        role: invitation.role,
+        delivery: 'email',
+        ...(invitation.project_id ? { project: invitation.project_id, permission: invitation.project_permission } : {}),
+      };
+      const result = await api(base + '/invitations', 'POST', input);
+      toast(result.message || 'Email undangan masuk antrean.', { kind: 'info' });
+      await loadAdministration();
+    });
+  };
   A.nativeRenewInvitation = el => {
     const invitation = session.invitations?.find(i => i.id === el.dataset.id);
     if (!invitation) return;
@@ -116,7 +157,7 @@ export function initAdministration({ session, renderSynced }) {
       await loadAdministration();
     });
   };
-  A.resendInvite = A.nativeRenewInvitation;
+  A.resendInvite = el => (session.features.email ? A.nativeResendInvitation(el) : A.nativeRenewInvitation(el));
   IN.nativeMemberRole = el => {
     const target = el.dataset.id,
       role = el.value;

@@ -409,6 +409,10 @@ export function initCollaboration({ session, sync, renderSynced }) {
       .catch(() => toast(url.href, { kind: 'info', ms: 10000 }));
   };
   function followLink() {
+    if (location.hash === '#email-settings') {
+      go('settings', { sec: 'notif-email' });
+      return;
+    }
     const match = location.hash.match(/^#(task|project|file)=([A-Za-z0-9_-]+)$/);
     if (!match) return;
     const [, kind, id] = match;

@@ -1,3 +1,4 @@
+import { queueSecurityMail } from './mail.js';
 import { z } from 'zod';
 import { transaction } from './db.js';
 import { digest, fail, limit, name, password, token, tokenSchema, uuid, hashPassword, verifyPassword } from './security.js';
@@ -145,6 +146,7 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
       await db.query('DELETE FROM sessions WHERE user_id=$1', [req.session.user_id]);
       await db.query('DELETE FROM login_challenges WHERE user_id=$1', [req.session.user_id]);
       await db.query('DELETE FROM password_resets WHERE user_id=$1', [req.session.user_id]);
+      await queueSecurityMail(db, config, req.session.user_id, 'Password akun telah diganti. Seluruh sesi login lama dicabut.');
     });
     clearSession(res);
     res.json({ message: 'Password diganti. Login kembali dengan password baru.' });
@@ -210,6 +212,7 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
       if (!updated.rowCount) fail(401, 'Silakan login kembali.');
       await db.query('DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2', [req.session.user_id, req.session.token_hash]);
       await db.query('DELETE FROM login_challenges WHERE user_id=$1', [req.session.user_id]);
+      await queueSecurityMail(db, config, req.session.user_id, 'Autentikasi dua langkah (2FA) telah diaktifkan.');
       return recoveryCodes(db, req.session.user_id);
     });
     res.json({ recoveryCodes: codes });
@@ -221,12 +224,16 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
       const result = await transaction(pool, async db => {
         const user = await reauthenticate(db, req, input, true);
         if (!(await db.query('SELECT enabled FROM user_security WHERE user_id=$1', [user.id])).rows[0]?.enabled) fail(400, '2FA belum aktif.');
-        if (action === 'recovery') return { recoveryCodes: await recoveryCodes(db, user.id) };
+        if (action === 'recovery') {
+          await queueSecurityMail(db, config, user.id, 'Recovery code 2FA dibuat ulang. Kode pemulihan sebelumnya tidak berlaku.');
+          return { recoveryCodes: await recoveryCodes(db, user.id) };
+        }
         await db.query('DELETE FROM user_security WHERE user_id=$1', [user.id]);
         await db.query('DELETE FROM recovery_codes WHERE user_id=$1', [user.id]);
         await db.query('DELETE FROM login_challenges WHERE user_id=$1', [user.id]);
         await db.query('DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2', [user.id, req.session.token_hash]);
         await db.query('UPDATE sessions SET mfa_verified_at=NULL WHERE token_hash=$1', [req.session.token_hash]);
+        await queueSecurityMail(db, config, user.id, 'Autentikasi dua langkah (2FA) telah dinonaktifkan.');
         return { ok: true };
       });
       res.json(result);
