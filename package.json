@@ -5,22 +5,39 @@
   "description": "Gr8r Studio: a calm, structured project management workspace.",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently --kill-others-on-fail -n api,web \"npm:dev:api\" \"npm:dev:web\"",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "dev:api": "node --env-file-if-exists=.env.local --watch server/index.js",
+    "dev:web": "vite",
+    "db:local": "node scripts/dev-db.js",
+    "db:migrate": "node --env-file-if-exists=.env.local server/cli.js migrate",
+    "owner:create": "node --env-file-if-exists=.env.local server/cli.js bootstrap",
+    "start": "node --env-file-if-exists=.env.local server/index.js",
+    "test": "node --env-file-if-exists=.env.local --test --test-concurrency=1 tests/*.test.js",
+    "test:e2e": "node --env-file-if-exists=.env.local scripts/browser-tests.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.64.1",
+    "concurrently": "^9.2.5",
     "eslint": "^9.39.5",
     "globals": "^15.15.0",
     "lucide": "^0.460.0",
     "prettier": "^3.9.9",
     "vite": "^6.4.4"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "helmet": "^8.3.0",
+    "nodemailer": "^10.3.1",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
   }
 }
