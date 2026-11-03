@@ -2,6 +2,7 @@ import { attachDatabasePool, waitUntil } from '@vercel/functions';
 import { readConfig } from './config.js';
 import { createPool } from './db.js';
 import { createApp } from './app.js';
+import { initializationDiagnostic } from './diagnostics.js';
 
 export function createVercelHandler({
   loadConfig = readConfig,
@@ -12,16 +13,32 @@ export function createVercelHandler({
 } = {}) {
   let initialized = null;
   async function initialize() {
-    const config = loadConfig();
-    const pool = openPool(config);
+    let config;
+    try {
+      config = loadConfig();
+    } catch (error) {
+      error.setupStage = 'configuration';
+      throw error;
+    }
+    let pool;
+    try {
+      pool = openPool(config);
+    } catch (error) {
+      error.setupStage = 'pool';
+      throw error;
+    }
     pool.on('error', () => console.error('Database pool connection failed.'));
+    let stage = 'pool';
     try {
       registerPool(pool);
+      stage = 'database';
       // A deployment must not silently create tables in a production database.
       await pool.query('SELECT name FROM schema_migrations LIMIT 1');
+      stage = 'application';
       const app = await buildApp(pool, config);
       return { app };
     } catch (error) {
+      error.setupStage = stage;
       await pool.end();
       throw error;
     }
@@ -42,16 +59,15 @@ export function createVercelHandler({
       defer(finished.then(() => app.locals.maintain()).catch(() => console.error('Background maintenance failed; will retry.')));
       return app(req, res);
     } catch (error) {
-      const missingSchema = ['42P01', '3F000'].includes(error.code);
-      console.error('API initialization failed:', missingSchema ? 'database migration required' : error.code || error.name);
+      const diagnostic = initializationDiagnostic(error);
+      console.error('API initialization failed:', diagnostic.code, { stage: diagnostic.stage, fields: diagnostic.fields });
       res.statusCode = 503;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.setHeader('Cache-Control', 'no-store');
       res.end(
         JSON.stringify({
-          error: missingSchema
-            ? 'Database belum disiapkan. Admin perlu menjalankan migrasi Supabase terlebih dahulu.'
-            : 'Layanan akun belum siap. Admin perlu memeriksa konfigurasi database dan deployment.',
+          error: diagnostic.message,
+          code: diagnostic.code,
         }),
       );
     }
