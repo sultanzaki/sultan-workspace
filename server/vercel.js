@@ -4,6 +4,20 @@ import { createPool } from './db.js';
 import { createApp } from './app.js';
 import { initializationDiagnostic } from './diagnostics.js';
 
+export function restoreApiPath(req) {
+  const url = new URL(req.url, 'http://internal');
+  if (['/api', '/api/', '/api/index'].includes(url.pathname)) {
+    const route = url.searchParams.get('__route');
+    if (route) {
+      if (!route.split('/').every(segment => /^[A-Za-z0-9_-]+$/.test(segment))) return false;
+      url.pathname = `/api/${route}`;
+    }
+  }
+  url.searchParams.delete('__route');
+  req.url = url.pathname + url.search;
+  return true;
+}
+
 export function createVercelHandler({
   loadConfig = readConfig,
   openPool = createPool,
@@ -44,6 +58,13 @@ export function createVercelHandler({
     }
   }
   return async function handler(req, res) {
+    if (!restoreApiPath(req)) {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(JSON.stringify({ error: 'Alamat API tidak valid.' }));
+      return;
+    }
     try {
       initialized ??= initialize().catch(error => {
         initialized = null;
