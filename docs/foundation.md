@@ -2,9 +2,13 @@
 
 ## Batas tahap ini
 
-Halaman utama sekarang memakai akun dan data workspace sungguhan melalui API. Yang sudah terhubung ke PostgreSQL: akun, sesi, undangan, reset password, workspace, peran, aktivasi anggota, tim, keanggotaan tim, antrean email, dan audit administrasi. Belum ada sinkronisasi proyek/task/komentar/file dari prototype ke database. Jangan memasukkan pekerjaan operasional ke prototype.
+Setelah login, halaman utama kembali memakai UI workspace asli: dashboard, proyek, task, board/list/table/calendar/timeline/files, pencarian, favorit, dan aktivitas. Panel administrasi akun/anggota/tim tersedia melalui **Kelola workspace** atau `/?manage=1`.
 
-Kode prototype dipertahankan di `src/demo.js` untuk tahap integrasi berikutnya. Hanya dapat dibuka dalam development dengan `VITE_ENABLE_DEMO=true npm run dev:web`; build production menghilangkan jalur tersebut. Data demo `gr8r.v2` di localStorage tidak diimpor otomatis menjadi data tim atau akun.
+Yang sudah terhubung ke PostgreSQL: akun, sesi, undangan, reset password, workspace, peran, aktivasi anggota, tim, keanggotaan tim, antrean email, dan audit administrasi. **Proyek/task/komentar belum terhubung ke database bersama**: perubahan pada UI workspace disimpan di browser, terpisah menurut ID akun dan workspace, dengan penanda permanen di halaman. Menghapus penyimpanan browser menghapus data lokal tersebut. Data proyek/task lokal tidak otomatis muncul untuk anggota lain atau perangkat lain.
+
+Workspace native dimulai kosong dengan identitas, anggota, dan tim dari API; tidak memuat proyek, anggota, tagihan, atau sesi fiktif dari data demo. Penyimpanan demo lama `gr8r.v2` tetap dipertahankan dan tidak dicampur dengan data native. Tampilan demo seeded masih bisa dibuka terpisah pada development dengan `VITE_ENABLE_DEMO=true npm run dev:web`.
+
+Upload isi file, berbagi proyek lokal, simulasi MFA/billing/perubahan password dari UI asal tidak diklaim berhasil: alur tersebut diarahkan ke pengelolaan native atau diberi pesan belum tersedia. Logout tetap mencabut sesi di server. UI workspace hanya dimuat setelah sesi dan keanggotaan workspace diverifikasi.
 
 ## Arsitektur
 

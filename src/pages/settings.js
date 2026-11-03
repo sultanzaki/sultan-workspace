@@ -8,6 +8,7 @@ import { av, pIcon } from '../ui/helpers.js';
 import { permsTable, teamsGrid } from './members.js';
 import { page404 } from './errors.js';
 import { SHORTCUTS } from '../overlays/modals.js';
+import { getWorkspaceSession } from '../core/workspace-session.js';
 
 export const SET_NAV = [
   [
@@ -83,6 +84,25 @@ export function pageSettings() {
   </div>`;
 }
 export function settingsBody(sec, title) {
+  if (
+    getWorkspaceSession() &&
+    [
+      'plan',
+      'payment',
+      'invoices',
+      'password',
+      'sessions',
+      '2fa',
+      'notif-email',
+      'notif-push',
+      'notif-mentions',
+      'notif-assign',
+      'profile',
+      'permissions',
+    ].includes(sec)
+  ) {
+    return `<h1>${title}</h1><p class="lead">Bagian ini belum terhubung ke layanan akun. Pengaturan anggota dan tim tersedia melalui Kelola workspace.</p><button class="btn btn-secondary" data-a="nativeManage">Kelola workspace</button>`;
+  }
   const P = S.prefs;
   const d = D();
   const np = d.notifPrefs;

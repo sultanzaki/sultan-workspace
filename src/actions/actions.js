@@ -13,6 +13,7 @@ import { viewOf } from '../shell/view-engine.js';
 import { TEMPLATES, closeModal, openModal } from '../overlays/modals.js';
 import { closePop, openPop, tgt } from '../overlays/popovers.js';
 import { strengthMeter } from '../pages/settings.js';
+import { getWorkspaceSession } from '../core/workspace-session.js';
 
 export const A = {},
   IN = {},
@@ -798,6 +799,10 @@ A.previewFile = el => {
   if (f) openModal({ type: 'filePreview', file: f, tid: f.task });
 };
 export function handleFiles(files, ctx) {
+  if (getWorkspaceSession()) {
+    toast('Penyimpanan isi file belum terhubung ke server. File belum diunggah.', { kind: 'info' });
+    return;
+  }
   if (!files || !files.length) return;
   if (S.ui.offline) {
     toast("Upload failed — you're offline.", { kind: 'err', action: 'Try again', onAction: () => {} });

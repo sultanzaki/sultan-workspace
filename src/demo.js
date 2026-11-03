@@ -57,6 +57,7 @@ import './actions/archive.js';
 import { S, D } from './core/store.js';
 import { A } from './actions/actions.js';
 import { ROUTE_NAMES, render, go } from './shell/render.js';
+import { getWorkspaceSession } from './core/workspace-session.js';
 
 (function init() {
   document.documentElement.lang = 'en';
@@ -69,7 +70,7 @@ import { ROUTE_NAMES, render, go } from './shell/render.js';
   }
   const h = (location.hash || '').slice(1);
   const authRoutes = ['login', 'signup', 'forgot', 'reset', 'verify', 'onboarding'];
-  if (authRoutes.includes(h)) S.ui.auth = h;
+  if (!getWorkspaceSession() && authRoutes.includes(h)) S.ui.auth = h;
   else if (h && ROUTE_NAMES[h]) S.ui.route = h;
   else S.ui.route = S.prefs.home || 'home';
   render();

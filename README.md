@@ -29,7 +29,9 @@ Untuk membuat tabel tanpa terminal, buka **Supabase → SQL Editor → New query
 
 ## Status integrasi
 
-Halaman utama sekarang memakai akun dan data workspace yang disimpan di database. **Proyek, task, komentar, dan file dari UI prototype belum terhubung ke backend**; integrasinya adalah tahap berikutnya. Prototype tetap tersedia secara eksplisit pada development dan tidak masuk build production.
+Setelah login, tampilan workspace asli tersedia kembali, termasuk Projects, Tasks, board/list/table/calendar/timeline/files. Pengelolaan akun dan anggota tersedia melalui **Kelola workspace**.
+
+**Akun, anggota, dan tim memakai database; proyek/task/komentar masih disimpan lokal di browser dan belum tersinkron ke tim.** Penanda ini ditampilkan pada UI. Data lokal dipisahkan per akun dan workspace, tanpa memuat data demo sebagai data tim. Penyimpanan isi file dan beberapa simulasi akun asal belum tersedia; integrasi domain ke backend adalah tahap berikutnya.
 
 ```bash
 npm run lint

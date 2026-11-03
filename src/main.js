@@ -1,4 +1,4 @@
-// The original local-only prototype is explicitly opt-in and development-only.
+// Standalone seeded demo is dev-only; normal startup authenticates first.
 if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO === 'true') {
   import('./demo.js');
 } else {

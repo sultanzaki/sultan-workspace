@@ -1,6 +1,6 @@
 # Original prototype notes
 
-These notes describe the local-only demo retained in `src/demo.js`, not the authenticated team application.
+These notes describe the original UI retained in `src/demo.js` and reused by the authenticated workspace. See `foundation.md` for native account integration and the explicit local-only project/task storage limitation.
 
 # Gr8r Studio
 

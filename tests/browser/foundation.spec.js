@@ -29,6 +29,8 @@ test('owner invites a member; member joins, reloads and logs out with no demo da
   await expect(page.getByRole('alert')).toContainText('Email atau password tidak sesuai');
   await page.getByLabel('Password', { exact: true }).fill('browser-test-password-123');
   await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
   await expect(page.getByText('Website Redesign')).toHaveCount(0);
   const ids = await page.locator('[id]').evaluateAll(elements => elements.map(element => element.id));
@@ -55,6 +57,8 @@ test('owner invites a member; member joins, reloads and logs out with no demo da
       memberPage.getByRole('button', { name: 'Terima undangan' }).click(),
     ]);
     expect(accepted.status(), await accepted.text()).toBe(201);
+    await expect(memberPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+    await memberPage.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
     await expect(memberPage.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
     await expect(memberPage.locator('img')).toHaveCount(0);
     await expect(memberPage.getByRole('heading', { name: 'Undang anggota' })).toHaveCount(0);
@@ -101,5 +105,63 @@ test('password recovery changes credentials and the old password stops working',
     page.getByRole('button', { name: 'Login', exact: true }).click(),
   ]);
   expect(login.status(), await login.text()).toBe(200);
-  await expect(page.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+});
+
+test('the original workspace, project views and local task editing remain accessible after native login', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  const nav = page.getByRole('navigation', { name: 'Main', exact: true });
+  await expect(nav).toBeVisible();
+  await expect(page.getByText('Proyek dan task tersimpan di browser ini; belum tersinkron ke tim.')).toBeVisible();
+  await expect(page.getByText('Website Redesign')).toHaveCount(0);
+  for (const route of [
+    'overview',
+    'projects',
+    'tasks',
+    'calendar',
+    'timeline',
+    'members',
+    'activity',
+    'inbox',
+    'mytasks',
+    'favorites',
+    'notifications',
+    'settings',
+  ]) {
+    await nav.locator(`[data-a="go"][data-r="${route}"]`).first().click();
+    await expect(page.locator('.content')).not.toContainText('Something went wrong.');
+    await expect(page.locator('.content')).not.toContainText('Page not found');
+  }
+  await nav.locator('[data-r="home"]').first().click();
+  await page.locator('button[data-a="newTask"]').first().click();
+  await expect(page.getByRole('heading', { name: 'New project', exact: true })).toBeVisible();
+  await page.getByLabel('Project name', { exact: true }).fill('Restored local project');
+  await page.getByRole('button', { name: 'Create project', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Restored local project', exact: true })).toBeVisible();
+  await page.locator('.content [data-a="go"][data-tab="board"]').click();
+  await page.locator('button[data-a="newTask"]').first().click();
+  await page.getByLabel('Task name', { exact: true }).fill('Restored local task');
+  await page.getByRole('button', { name: 'Create task', exact: true }).click();
+  await page.screenshot({ path: 'test-results/restored-workspace.png' });
+  for (const tab of ['board', 'list', 'table', 'calendar', 'timeline', 'files', 'overview', 'activity']) {
+    await page.locator(`.content [data-a="go"][data-tab="${tab}"]`).first().click();
+    await expect(page.locator('.content')).not.toContainText('Something went wrong.');
+  }
+  await page.reload();
+  await expect(nav.getByText('Restored local project', { exact: true })).toBeVisible();
+  await expect(page.getByText('Restored local task', { exact: true }).first()).toBeVisible();
+  await page.locator('[data-a="nativeSignOut"]').click();
+  await expect(page.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
+  await page.getByLabel('Email', { exact: true }).fill('member@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('member-browser-password-123');
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await expect(nav).toBeVisible();
+  await expect(page.getByText('Restored local project', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Restored local task', { exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
 });
