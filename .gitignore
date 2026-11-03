@@ -5,3 +5,7 @@ dist/
 __MACOSX/
 *.log
 .env*
+!.env.example
+.local/
+coverage/
+test-results/

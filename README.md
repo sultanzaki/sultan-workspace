@@ -1,82 +1,40 @@
-# Gr8r Studio
+# Gr8r Studio — fondasi aplikasi tim
 
-A calm, structured project management workspace: home dashboard, inbox, my tasks, projects with
-board / list / table / calendar / timeline / files views, members, teams, activity and settings.
+Aplikasi tim dengan **login native dan PostgreSQL**, siap dikoneksikan ke **Supabase Database tanpa Supabase Auth**. Frontend menggunakan JavaScript ES Modules/CSS/Vite; backend menggunakan Node.js/Express.
 
-Built with plain JavaScript ES modules and CSS, bundled by [Vite](https://vite.dev). There is no
-UI framework and no runtime dependency.
+Fondasi yang sudah diimplementasikan:
 
-![Gr8r Studio home dashboard](docs/preview.png)
+- Login/logout, cookie sesi aman, reset password, dan akun baru melalui undangan.
+- Workspace, role owner/admin/member, aktivasi anggota, tim, dan audit administrasi.
+- Migrasi PostgreSQL dalam schema privat, antrean email dengan retry, serta validasi dan izin di backend.
+- Tes API dengan PostgreSQL sungguhan, browser tests, dan CI.
 
-## Getting started
+## Mulai lokal
 
-Requires Node.js 18 or newer (`.nvmrc` pins 22).
+Memerlukan Node 22 dan Docker.
 
 ```bash
-npm install
-npm run dev       # http://localhost:5173 with hot reload
-npm run build     # production build in dist/
-npm run preview   # serve the production build locally
-npm run lint      # ESLint
-npm run format    # Prettier
+npm ci
+npm run db:local
+npm run db:migrate
 ```
 
-## Project structure
+Buat owner pertama melalui `npm run owner:create` dengan JSON melalui stdin, kemudian jalankan `npm run dev`. Ikuti [panduan fondasi](docs/foundation.md) untuk format input, pengiriman email development, konfigurasi Supabase, SMTP, deployment, dan pengujian.
 
-```
-index.html              HTML entry; loads src/main.js
-public/favicon.svg      brand mark
-vite.config.js          Vite config, including the Lucide icon-subset plugin
-eslint.config.js        lint rules (ESLint flat config); formatting by Prettier (.prettierrc.json)
-.github/workflows/      CI: lint, format check, build
-docs/preview.png        README screenshot
-src/
-  main.js               entry: imports styles and modules, then boots the app
-  styles/
-    index.css           imports every stylesheet in cascade order
-    tokens.css          colours, spacing, type, radius, the shared --gutter
-    base.css  components.css  shell.css  panels.css  overlays.css  states.css  motion.css  responsive.css
-    views/              list, board, table, calendar, timeline, projects & files
-    pages/              settings, auth & onboarding
-  core/                 utilities, constants, icons, store (state + lookups), theme
-  data/seed.js          demo workspace data
-  ui/                   shared render helpers, toasts, the select dropdown
-  shell/                render loop and router, sidebar/topbar layout, skeletons, view engine
-  components/           task list renderer
-  pages/                one module per route
-  views/                project views: board, table, calendar, timeline, files, overview
-  overlays/             task drawer, modals, popovers, context menu, command palette
-  features/             teams, subtasks, archive (rendering)
-  actions/              user actions, event wiring, keyboard shortcuts, drag and drop
+## Status integrasi
+
+Halaman utama sekarang memakai akun dan data workspace yang disimpan di database. **Proyek, task, komentar, dan file dari UI prototype belum terhubung ke backend**; integrasinya adalah tahap berikutnya. Prototype tetap tersedia secara eksplisit pada development dan tidak masuk build production.
+
+```bash
+npm run lint
+npm run format:check
+npm run build
+npm test
+npm run test:e2e
 ```
 
-### Layers
+Tes membutuhkan database lokal disposable khusus; lihat panduan sebelum menjalankan. Tidak ada kredensial Supabase atau SMTP yang disertakan di repository.
 
-Dependencies point downward:
+Menurut konfirmasi pengguna dari pembuat proyek, kode asal berlisensi **MIT**. Catatan atribusi dan status teks lisensi asli tersedia di [panduan fondasi](docs/foundation.md).
 
-1. `core/` and `data/` depend on nothing else in the app.
-2. `ui/`, `shell/`, `components/`, `pages/`, `views/`, `overlays/` and `features/` render HTML from state.
-3. `actions/` change state and re-render. Each action module registers its handlers on the
-   shared action table (`A`) when it loads, so `main.js` imports them after `actions/actions.js`.
-
-## Conventions
-
-- **Rendering:** each page or view is a function that returns an HTML string from the store
-  (`S`). `render()` rebuilds the shell and keeps focus and scroll positions.
-- **Interactions:** elements declare `data-a="actionName"`. `actions/events.js` delegates the
-  click to `A.actionName`. Inputs use `data-in`, blur handlers use `data-blur`.
-- **Layout:** every page edge uses `var(--gutter)`, so the breadcrumb, page header, toolbar,
-  list, table and board start on the same line.
-- **Dropdowns:** write a normal `<select class="select">`. `ui/select.js` renders it as the
-  design-system menu and keeps the native element as the source of truth.
-- **Icons:** call `ic('name')` with any [Lucide](https://lucide.dev) icon name. The
-  `virtual:icons` plugin bundles only the icons the source uses.
-
-## Continuous integration
-
-Every push and pull request runs lint, the format check and a production build
-(`.github/workflows/ci.yml`).
-
-## Deploy
-
-`vercel.json` builds with Vite and serves `dist/`.
+Catatan arsitektur UI asal tersedia di [dokumentasi prototype](docs/prototype.md).

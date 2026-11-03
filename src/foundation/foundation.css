@@ -1,0 +1,179 @@
+body.foundation-mode {
+  overflow-y: auto;
+}
+.foundation {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.foundation-header {
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.foundation-main {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.foundation-auth {
+  max-width: 520px;
+  padding-top: 56px;
+}
+.foundation-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.foundation h1 {
+  font-size: 24px;
+  margin-bottom: 10px;
+  line-height: 1.3;
+}
+.foundation h2 {
+  font-size: 19px;
+  margin-bottom: 14px;
+}
+.foundation h3 {
+  font-size: 15px;
+  margin: 16px 0 10px;
+}
+.foundation p {
+  color: var(--text-2);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.foundation form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.foundation .field {
+  margin: 0;
+}
+.foundation .foundation-inline {
+  flex-direction: row;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.foundation-inline .field {
+  min-width: 180px;
+  flex: 1;
+}
+.foundation-inline select {
+  width: auto;
+  min-width: 110px;
+}
+.foundation-table {
+  overflow-x: auto;
+}
+.foundation table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.foundation th,
+.foundation td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.foundation th {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.foundation td {
+  font-size: 13px;
+}
+.foundation .foundation-message {
+  padding: 14px;
+  border: 1px solid currentColor;
+  border-radius: var(--r);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.foundation-message:empty {
+  display: none;
+}
+.foundation-message.bad {
+  color: var(--red);
+}
+.foundation-message.ok {
+  color: var(--green);
+}
+.foundation-note {
+  padding: 12px 16px;
+  background: var(--accent-soft);
+  border-radius: var(--r);
+}
+.foundation-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+.foundation-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.foundation-switch select {
+  max-width: 360px;
+}
+.foundation-team {
+  border-top: 1px solid var(--border);
+  margin-top: 20px;
+}
+.foundation-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+.foundation li {
+  margin: 12px 0;
+  line-height: 1.5;
+}
+.foundation ul {
+  padding-left: 18px;
+}
+.foundation details summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 8px 0;
+}
+.foundation details form {
+  margin-top: 18px;
+}
+.foundation button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.foundation-audit {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .foundation-main {
+    padding: 16px;
+  }
+  .foundation-header {
+    padding: 16px;
+    flex-wrap: wrap;
+  }
+  .foundation-panel {
+    padding: 18px;
+  }
+  .foundation-auth {
+    padding-top: 24px;
+  }
+  .foundation-inline .field {
+    min-width: 100%;
+  }
+}
