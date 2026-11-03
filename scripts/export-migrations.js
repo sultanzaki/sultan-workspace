@@ -30,7 +30,7 @@ $migration_runner$;`);
 -- Creates application tables only in app_private; does not delete existing data.
 -- Safe to run again: already-recorded migrations are skipped after checksum verification.
 BEGIN;
-SELECT pg_advisory_xact_lock(84291370);
+DO $migration_lock$ BEGIN PERFORM pg_advisory_xact_lock(84291370); END $migration_lock$;
 CREATE SCHEMA IF NOT EXISTS app_private;
 SET LOCAL search_path = app_private;
 CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now());
@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, checksum te
 ${blocks.join('\n\n')}
 
 COMMIT;
+
+-- Supabase SQL Editor displays this status instead of the lock's empty result.
+SELECT name, applied_at FROM app_private.schema_migrations ORDER BY name;
 `;
 }
 

@@ -66,12 +66,14 @@ Verifikasi koneksi Supabase belum dilakukan tanpa kredensial project. Tes yang t
 1. Buka project Supabase yang sama dengan `DATABASE_URL` di Vercel.
 2. Pilih **SQL Editor → New query**.
 3. Buka [supabase-migration.sql](supabase-migration.sql), salin **seluruh isi file**, lalu tempel ke query tersebut.
-4. Klik **Run**. Ini membuat schema `app_private`, tabel aplikasi, dan catatan versi migrasi. Tidak menghapus data yang sudah ada; jika dijalankan lagi, migrasi yang sudah tercatat dilewati setelah checksum diperiksa.
+4. Klik **Run**. Hasil akhir menampilkan nama dan waktu migrasi yang sudah diterapkan. Ini membuat schema `app_private`, tabel aplikasi, dan catatan versi migrasi. Tidak menghapus data yang sudah ada; jika dijalankan lagi, migrasi yang sudah tercatat dilewati setelah checksum diperiksa.
 5. Jika berhasil, jalankan query pemeriksaan berikut. Hasilnya harus memuat `001_foundation.sql`.
 
 ```sql
 select name, applied_at from app_private.schema_migrations;
 ```
+
+Jika file versi sebelumnya hanya menampilkan kolom kosong `pg_advisory_xact_lock`, itu adalah hasil normal langkah penguncian. Query pemeriksaan di atas memastikan apakah seluruh migrasi sudah selesai.
 
 File ini dihasilkan dari migrasi yang sama dengan CLI. Pengembang dapat membuat ulang melalui `node scripts/export-migrations.js > docs/supabase-migration.sql`. Tidak ada password atau connection string di file migrasi. Migrasi membuat tabel, **bukan membuat akun login**; owner pertama tetap dibuat melalui CLI privat.
 
@@ -83,7 +85,7 @@ File ini dihasilkan dari migrasi yang sama dengan CLI. Pengembang dapat membuat 
 4. Tanpa SMTP, biarkan `MAIL_TRANSPORT` tidak diisi atau isi `disabled`. Jangan memakai `file` di Vercel. Saat SMTP tersedia, set konfigurasi SMTP di atas.
 5. Jika database memerlukan CA khusus, isi `DATABASE_CA_PEM` dengan sertifikat CA database dari Supabase. Verifikasi TLS tidak dinonaktifkan. `DB_POOL_MAX` default 2 per instance function dan pool didaftarkan melalui `attachDatabasePool` agar koneksi idle dapat dilepas saat instance dihentikan.
 6. Jalankan migrasi melalui SQL Editor di atas atau CLI privat. Buat akun owner dengan CLI. Jangan menaruh migrasi/bootstrap pada build atau endpoint publik.
-7. Redeploy setelah mengubah environment variables. Buka `/api/health`: hasil normal adalah `{"status":"ok"}`. Tanpa sesi login, `/api/auth/me` semestinya mengembalikan JSON 401, bukan halaman 404 Vercel. Bila migrasi belum dijalankan, API mengembalikan JSON 503 dengan instruksi migrasi.
+7. Redeploy setelah mengubah environment variables. Buka `/api/health`: hasil normal adalah `{"status":"ok"}`. Tanpa sesi login, `/api/auth/me` semestinya mengembalikan JSON 401, bukan halaman 404 Vercel. Bila migrasi belum dijalankan, API mengembalikan JSON 503 dengan instruksi migrasi. Log inisialisasi sekarang menyebut kode, tahap (`configuration`, `pool`, `database`, atau `application`), dan nama isian terkait; tidak mencetak nilai kredensial. Contoh: `DATABASE_TIMEOUT` berarti koneksi belum tercapai, sedangkan `APP_ORIGIN_INVALID` berarti format domain perlu diperbaiki.
 
 Saat email diaktifkan, proses pengiriman dicoba sesudah request. Agar retry tetap berjalan ketika tidak ada pengunjung, gunakan scheduler yang memanggil `GET /api/internal/maintenance` dengan header `Authorization: Bearer <CRON_SECRET>`, lalu set `CRON_SECRET` acak minimal 32 karakter di Vercel. Setiap pemanggilan menangani maksimal satu pesan. Pilih frekuensi yang sesuai jumlah pesan dan masa berlaku token (reset 30 menit). Tidak ada jadwal cron yang diaktifkan otomatis: Vercel Hobby hanya mengizinkan cron harian sehingga tidak cukup untuk retry reset password tepat waktu; gunakan paket/scheduler yang mendukung interval lebih sering sebelum mengandalkan email operasional. Endpoint menolak request tanpa secret. Selama email disabled, pengaturan scheduler tidak diperlukan untuk login.
 

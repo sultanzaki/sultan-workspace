@@ -1,10 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 
+function configError(code, message, fields = []) {
+  const error = new Error(message);
+  error.code = code;
+  error.configFields = fields;
+  throw error;
+}
+
 export function readConfig(env = process.env) {
   const serverless = env.VERCEL === '1';
   const deploymentHost = env.VERCEL_ENV === 'production' ? env.VERCEL_PROJECT_PRODUCTION_URL || env.VERCEL_URL : env.VERCEL_URL;
-  const config = z
+  const result = z
     .object({
       NODE_ENV: z.enum(['development', 'test', 'production']).default(serverless ? 'production' : 'development'),
       DATABASE_URL: z.string().url(),
@@ -37,18 +44,25 @@ export function readConfig(env = process.env) {
         .default(serverless ? 2 : 10),
       CRON_SECRET: z.string().min(32).optional(),
     })
-    .parse(env);
+    .safeParse(env);
+  if (!result.success) configError('CONFIG_INVALID', 'Invalid environment configuration', [...new Set(result.error.issues.map(issue => issue.path.join('.')))]);
+  const config = result.data;
   const origin = new URL(config.APP_ORIGIN);
-  if (origin.origin !== config.APP_ORIGIN || origin.username || origin.password) throw new Error('APP_ORIGIN must be an origin without a path or credentials');
+  if (origin.origin !== config.APP_ORIGIN || origin.username || origin.password)
+    configError('APP_ORIGIN_INVALID', 'APP_ORIGIN must be an origin without a path or credentials', ['APP_ORIGIN']);
   const database = new URL(config.DATABASE_URL);
-  if (!['postgres:', 'postgresql:'].includes(database.protocol)) throw new Error('DATABASE_URL must be a PostgreSQL connection string');
+  if (!['postgres:', 'postgresql:'].includes(database.protocol))
+    configError('DATABASE_URL_INVALID', 'DATABASE_URL must be a PostgreSQL connection string', ['DATABASE_URL']);
   config.serverless = serverless;
   config.MAIL_TRANSPORT ??= config.SMTP_HOST ? 'smtp' : config.NODE_ENV === 'production' ? 'disabled' : 'file';
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(database.hostname);
-  if (config.NODE_ENV === 'production' && origin.protocol !== 'https:') throw new Error('Production requires an HTTPS APP_ORIGIN');
-  if (config.NODE_ENV === 'production' && config.MAIL_TRANSPORT === 'file') throw new Error('Production cannot use file delivery; use SMTP or disabled');
-  if (config.MAIL_TRANSPORT === 'smtp' && !config.SMTP_HOST) throw new Error('SMTP_HOST is required');
-  if (Boolean(config.SMTP_USER) !== Boolean(config.SMTP_PASSWORD)) throw new Error('SMTP_USER and SMTP_PASSWORD must be supplied together');
+  if (config.NODE_ENV === 'production' && origin.protocol !== 'https:')
+    configError('APP_ORIGIN_HTTPS_REQUIRED', 'Production requires an HTTPS APP_ORIGIN', ['APP_ORIGIN']);
+  if (config.NODE_ENV === 'production' && config.MAIL_TRANSPORT === 'file')
+    configError('MAIL_TRANSPORT_INVALID', 'Production cannot use file delivery; use SMTP or disabled', ['MAIL_TRANSPORT']);
+  if (config.MAIL_TRANSPORT === 'smtp' && !config.SMTP_HOST) configError('SMTP_HOST_REQUIRED', 'SMTP_HOST is required', ['SMTP_HOST']);
+  if (Boolean(config.SMTP_USER) !== Boolean(config.SMTP_PASSWORD))
+    configError('SMTP_CREDENTIALS_INCOMPLETE', 'SMTP_USER and SMTP_PASSWORD must be supplied together', ['SMTP_USER', 'SMTP_PASSWORD']);
   // Explicit verification prevents connection-string sslmode options downgrading TLS.
   for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'options']) database.searchParams.delete(key);
   const ca = config.DATABASE_CA_PEM || (config.DATABASE_CA_FILE ? readFileSync(config.DATABASE_CA_FILE, 'utf8') : null);

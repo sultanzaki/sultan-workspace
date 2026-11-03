@@ -10,6 +10,36 @@ import { createVercelHandler } from '../server/vercel.js';
 import { readApiResponse } from '../src/foundation/http.js';
 import { migrationSql } from '../scripts/export-migrations.js';
 import { testConfig } from './database.js';
+import { initializationDiagnostic } from '../server/diagnostics.js';
+
+test('initialization diagnostics identify safe categories without exposing credentials', () => {
+  const sensitive = 'postgresql://user:private-password@private-host/database';
+  const timeout = Object.assign(new Error(`Connection timeout: ${sensitive}`), { setupStage: 'database' });
+  const result = initializationDiagnostic(timeout);
+  assert.equal(result.code, 'DATABASE_TIMEOUT');
+  assert.match(result.message, /Session pooler/);
+  assert.doesNotMatch(JSON.stringify(result), /private-password|private-host/);
+  assert.doesNotMatch(
+    JSON.stringify(initializationDiagnostic(Object.assign(new Error(sensitive), { code: sensitive, configFields: [sensitive] }))),
+    /private-password|private-host/,
+  );
+  assert.throws(
+    () => readConfig({ DATABASE_URL: sensitive, APP_ORIGIN: 'https://sultan-workspace.vercel.app/' }),
+    error => {
+      assert.equal(error.code, 'APP_ORIGIN_INVALID');
+      assert.deepEqual(error.configFields, ['APP_ORIGIN']);
+      return true;
+    },
+  );
+  assert.throws(
+    () => readConfig({}),
+    error => {
+      assert.equal(error.code, 'CONFIG_INVALID');
+      assert.deepEqual(error.configFields, ['DATABASE_URL']);
+      return true;
+    },
+  );
+});
 
 test('non-JSON platform failures show an actionable message without leaking response bodies', async () => {
   for (const [body, status, contentType] of [
@@ -61,6 +91,7 @@ test('SQL Editor migrations and the Vercel function share the real database cont
   const pool = createPool(localConfig);
   const pools = [],
     deferred = [];
+  const createdRoles = [];
   let opens = 0,
     builds = 0,
     registrations = 0;
@@ -74,6 +105,14 @@ test('SQL Editor migrations and the Vercel function share the real database cont
     CRON_SECRET: secret,
   });
   await pool.query('DROP SCHEMA IF EXISTS app_private CASCADE');
+  // Exercise the revoke branches present on Supabase, absent from plain PostgreSQL.
+  for (const role of ['anon', 'authenticated']) {
+    const exists = await pool.query('SELECT 1 FROM pg_roles WHERE rolname=$1', [role]);
+    if (!exists.rowCount) {
+      await pool.query(`CREATE ROLE ${role} NOLOGIN`);
+      createdRoles.push(role);
+    }
+  }
   const handler = createVercelHandler({
     loadConfig: () => config,
     openPool: config => {
@@ -101,6 +140,7 @@ test('SQL Editor migrations and the Vercel function share the real database cont
     await new Promise(resolve => server.close(resolve));
     await Promise.all(deferred);
     for (const p of pools) if (!p.ended) await p.end();
+    for (const role of createdRoles) await pool.query(`DROP ROLE ${role}`);
     await pool.end();
   });
   async function request(route, { method = 'GET', body, cookie, csrf, headers = {} } = {}) {
@@ -125,9 +165,18 @@ test('SQL Editor migrations and the Vercel function share the real database cont
   await t.test('SQL Editor file is repeatable and compatible with subsequent CLI migrations', async () => {
     const sql = await readFile(new URL('../docs/supabase-migration.sql', import.meta.url), 'utf8');
     assert.equal(sql, await migrationSql());
-    await pool.query(sql);
+    const results = await pool.query(sql);
+    const summary = Array.isArray(results) ? results.at(-1).rows : results.rows;
+    assert.equal(summary[0].name, '001_foundation.sql');
     await pool.query(sql);
     await migrate(pool);
+    for (const role of ['anon', 'authenticated']) {
+      const privileges = await pool.query(
+        "SELECT has_schema_privilege($1, 'app_private', 'USAGE') AS usage, has_schema_privilege($1, 'app_private', 'CREATE') AS create",
+        [role],
+      );
+      assert.deepEqual(privileges.rows[0], { usage: false, create: false });
+    }
     assert.equal((await pool.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '1');
     await bootstrap(pool, { email: 'vercel-owner@example.test', name: 'Vercel Owner', workspace: 'Vercel Workspace', password: 'vercel-test-password-123' });
   });
