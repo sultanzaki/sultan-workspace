@@ -24,7 +24,7 @@ export function tcell(t, c) {
     case 'title':
       return ed
         ? `<td class="sticky editing"><input id="edit-cell" data-blur="commitCell" data-key-enter="commitCell" data-id="${t.id}" data-f="title" value="${esc(t.title)}" aria-label="Title"></td>`
-        : `<td class="sticky cellbtn" data-a="openTask" data-id="${t.id}" data-dbl="editCell" data-f="title" title="Double-click to rename"><span class="row" style="gap:8px">${stIcon(t.status, 13)}<span class="trunc" style="font-weight:450">${esc(t.title)}</span><span class="mono faint" style="font-size:11px;margin-left:auto">${t.key}</span></span></td>`;
+        : `<td class="sticky cellbtn" data-a="editCell" data-id="${t.id}" data-f="title" title="Click to rename"><span class="row" style="gap:8px">${stIcon(t.status, 13)}<span class="trunc" style="font-weight:450">${esc(t.title)}</span><button class="mono faint" style="font-size:11px;margin-left:auto" data-a="openTask" data-id="${t.id}" aria-label="Open task ${esc(t.key)}">${t.key}</button></span></td>`;
     case 'status':
       return `<td class="cellbtn" data-a="pop" data-pop="status" data-id="${t.id}"><span class="row" style="gap:6px">${stPill(t.status)}</span></td>`;
     case 'priority':

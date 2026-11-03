@@ -1,6 +1,6 @@
 # Original prototype notes
 
-These notes describe the original UI retained in `src/demo.js` and reused by the authenticated workspace. See `foundation.md` for native account integration and the explicit local-only project/task storage limitation.
+These notes describe the original UI retained in `src/demo.js` and reused by the authenticated workspace. See `foundation.md` for native account integration, shared PostgreSQL project/task storage, and features still pending integration.
 
 # Gr8r Studio
 

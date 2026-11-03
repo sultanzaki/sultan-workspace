@@ -1,14 +1,18 @@
 # Fondasi aplikasi tim
 
-## Batas tahap ini
+## Status fase 1–3
 
 Setelah login, halaman utama kembali memakai UI workspace asli: dashboard, proyek, task, board/list/table/calendar/timeline/files, pencarian, favorit, dan aktivitas. Panel administrasi akun/anggota/tim tersedia melalui **Kelola workspace** atau `/?manage=1`.
 
-Yang sudah terhubung ke PostgreSQL: akun, sesi, undangan, reset password, workspace, peran, aktivasi anggota, tim, keanggotaan tim, antrean email, dan audit administrasi. **Proyek/task/komentar belum terhubung ke database bersama**: perubahan pada UI workspace disimpan di browser, terpisah menurut ID akun dan workspace, dengan penanda permanen di halaman. Menghapus penyimpanan browser menghapus data lokal tersebut. Data proyek/task lokal tidak otomatis muncul untuk anggota lain atau perangkat lain.
+Yang sudah terhubung ke PostgreSQL: akun, sesi, undangan, reset password, workspace, peran, aktivasi anggota, tim, keanggotaan tim, antrean email, audit administrasi, **proyek, task, saved views, preferensi tampilan, dan aktivitas perubahan konten**. Fase 2 mencakup CRUD proyek/task, proyek privat, assignee, status, prioritas, tanggal, label, deskripsi, subtask, dependency, arsip/pemulihan, dan deteksi konflik. Fase 3 menghubungkan Board/List/Table/Calendar/Timeline ke data yang sama, termasuk drag-and-drop board/list/calendar/timeline, edit tabel, pencarian, filter, sorting, dan saved views bersama. Preferensi filter/sort/pencarian/tata letak disimpan per pengguna.
+
+Penyimpanan memakai antrean perubahan per objek dengan debounce 300 ms, satu request aktif, revisi workspace, dan ID mutasi untuk retry yang tidak menggandakan perubahan. Backend memvalidasi input, keanggotaan, akses proyek privat, assignee, tanggal, dan siklus dependency. Edit dari revisi lama ditolak dengan HTTP 409. Status simpan ditampilkan permanen; pesan sukses baru muncul setelah server menerima perubahan. Saat gagal/konflik, draft dicadangkan di browser dan dapat diunduh sebagai JSON sebelum **Muat data terbaru**. Tombol **Coba simpan lagi** tersedia untuk kegagalan jaringan. Refresh manual mengambil data server; konflik perlu ditinjau dan diterapkan ulang, tidak digabung otomatis.
+
+Data anggota lain dimuat sekitar setiap 10 detik saat halaman aktif, tanpa edit tertunda dan tanpa fokus di input. Ini polling, belum realtime WebSocket. Menghapus localStorage tidak menghapus proyek/task yang sudah tersimpan. Data lokal dari versi sebelumnya tidak otomatis menimpa database: tombol **Impor data lokal lama** tersedia pada akun/workspace/browser asal, hanya menambahkan ID yang belum ada. Komentar dan isi file tidak diimpor. Penyimpanan `gr8r.v2` milik demo tetap terpisah.
 
 Workspace native dimulai kosong dengan identitas, anggota, dan tim dari API; tidak memuat proyek, anggota, tagihan, atau sesi fiktif dari data demo. Penyimpanan demo lama `gr8r.v2` tetap dipertahankan dan tidak dicampur dengan data native. Tampilan demo seeded masih bisa dibuka terpisah pada development dengan `VITE_ENABLE_DEMO=true npm run dev:web`.
 
-Upload isi file, berbagi proyek lokal, simulasi MFA/billing/perubahan password dari UI asal tidak diklaim berhasil: alur tersebut diarahkan ke pengelolaan native atau diberi pesan belum tersedia. Logout tetap mencabut sesi di server. UI workspace hanya dimuat setelah sesi dan keanggotaan workspace diverifikasi.
+Komentar, upload isi file, task berulang, notifikasi kolaborasi, MFA, dan billing belum diimplementasikan sebagai layanan bersama. Alur yang belum tersedia menampilkan pesan jelas; pengaturan akun/anggota diarahkan ke pengelolaan native. Email ditunda sampai SMTP dikonfigurasi. Logout tetap mencabut sesi di server. UI workspace hanya dimuat setelah sesi dan keanggotaan workspace diverifikasi.
 
 ## Arsitektur
 
@@ -81,7 +85,7 @@ Verifikasi koneksi Supabase belum dilakukan tanpa kredensial project. Tes yang t
 2. Pilih **SQL Editor → New query**.
 3. Buka [supabase-migration.sql](supabase-migration.sql), salin **seluruh isi file**, lalu tempel ke query tersebut.
 4. Klik **Run**. Hasil akhir menampilkan nama dan waktu migrasi yang sudah diterapkan. Ini membuat schema `app_private`, tabel aplikasi, dan catatan versi migrasi. Tidak menghapus data yang sudah ada; jika dijalankan lagi, migrasi yang sudah tercatat dilewati setelah checksum diperiksa.
-5. Jika berhasil, jalankan query pemeriksaan berikut. Hasilnya harus memuat `001_foundation.sql`.
+5. Jika berhasil, jalankan query pemeriksaan berikut. Hasilnya harus memuat `001_foundation.sql` dan `002_project_content.sql`. Upgrade dari versi lama memakai file SQL yang sama: migrasi yang sudah ada dilewati, lalu tabel konten ditambahkan. Akun owner yang sudah dibuat tetap dipakai.
 
 ```sql
 select name, applied_at from app_private.schema_migrations;
@@ -156,7 +160,7 @@ npm run test:e2e
 
 Tes membutuhkan `TEST_DATABASE_URL` khusus pada localhost dengan nama database berakhiran `_test`. Tes menolak URL remote dan tidak memakai `DATABASE_URL` sebagai fallback. **Tes menghapus schema `app_private` pada database tes**, bukan pada database development. Jalankan suite API dan browser berurutan karena keduanya memakai fixture database yang sama. Browser suite menjalankan API dan Vite sendiri pada port 3001/5173; matikan dev server lebih dahulu.
 
-Jika Chromium sudah tersedia, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` ke executable yang dipilih. Tests mencakup akses lintas-workspace, eskalasi role, CSRF, undangan ulang/kedaluwarsa/sekali pakai, perlindungan owner terakhir saat request bersamaan, reset dan pencabutan sesi, outbox, rendering, serta navigasi login/join/logout. CI menjalankan seluruh pemeriksaan dengan database disposable.
+Jika Chromium sudah tersedia, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` ke executable yang dipilih. Tests mencakup akses lintas-workspace, eskalasi role, CSRF, undangan ulang/kedaluwarsa/sekali pakai, perlindungan owner terakhir saat request bersamaan, reset dan pencabutan sesi, outbox, rendering, CRUD konten bersama, akses proyek privat, validasi dependency, konflik edit, retry jaringan, drag-and-drop, filter/sort, saved views antar-akun, serta ketahanan data setelah localStorage dihapus. CI menjalankan seluruh pemeriksaan dengan database disposable.
 
 ## Lisensi asal
 
@@ -166,4 +170,4 @@ Simpan teks lisensi MIT dan copyright notice asli dari pembuatnya saat tersedia,
 
 ## Tahap selanjutnya
 
-Hubungkan proyek/task/komentar melalui API berizin, tambahkan skema domain beserta migrasi data yang disetujui, pengelolaan file sungguhan, notifikasi, konflik edit, dan URL langsung ke objek. Jangan mengirim seluruh snapshot state browser ke database: backend harus memvalidasi operasi serta hak akses per objek.
+Tahap berikutnya mencakup komentar/mention, penyimpanan isi file sungguhan, notifikasi kolaborasi, task berulang, URL langsung ke objek, dan email ketika SMTP tersedia. Fondasi proyek/task dan tampilan sudah memakai API berizin serta database bersama.

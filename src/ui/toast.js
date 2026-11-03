@@ -3,8 +3,17 @@ import { $, esc } from '../core/utils.js';
 import { ic } from '../core/icons.js';
 import { S, save } from '../core/store.js';
 import { render } from '../shell/render.js';
+import { getWorkspaceSession } from '../core/workspace-session.js';
 
 export function toast(msg, opt = {}) {
+  const session = getWorkspaceSession();
+  if (session?.flush && !opt.afterSave && !['err', 'info'].includes(opt.kind)) {
+    void Promise.resolve()
+      .then(() => session.flush())
+      .then(() => toast(msg, { ...opt, afterSave: true }))
+      .catch(() => {});
+    return;
+  }
   const host = $('#toasts');
   if (!host) return;
   const el = document.createElement('div');
