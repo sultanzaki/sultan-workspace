@@ -18,6 +18,7 @@ export default defineConfig({
     command: 'npm run dev',
     url: 'http://localhost:5173',
     reuseExistingServer: false,
+    stdout: 'pipe',
     timeout: 30000,
     env: {
       DATABASE_URL: process.env.TEST_DATABASE_URL,
