@@ -75,7 +75,7 @@ export function applyPatch(t, patch) {
         logAct('completed', t);
         fxSet({ done: t.id });
       } else logAct('moved', t, `from ${ST[old].name} to ${ST[nv].name}`);
-      if (nv === 'done' && t.recur && t.due) {
+      if (!getWorkspaceSession() && nv === 'done' && t.recur && t.due) {
         const nd = iso(addD(parse(t.due), RECUR_DAYS[t.recur] || 7));
         const n = createTask({
           ...JSON.parse(JSON.stringify(t)),
@@ -809,8 +809,7 @@ A.previewFile = el => {
 };
 export function handleFiles(files, ctx) {
   if (getWorkspaceSession()) {
-    toast('Penyimpanan isi file belum terhubung ke server. File belum diunggah.', { kind: 'info' });
-    return;
+    return getWorkspaceSession().uploadFiles?.(files, ctx);
   }
   if (!files || !files.length) return;
   if (S.ui.offline) {

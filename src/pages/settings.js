@@ -84,6 +84,24 @@ export function pageSettings() {
   </div>`;
 }
 export function settingsBody(sec, title) {
+  if (getWorkspaceSession() && ['notif-push', 'notif-mentions', 'notif-assign'].includes(sec)) {
+    const keys =
+      sec === 'notif-mentions'
+        ? ['push_mention']
+        : sec === 'notif-assign'
+          ? ['push_assign', 'push_status', 'push_due']
+          : ['push_mention', 'push_assign', 'push_comment', 'push_status', 'push_due'];
+    const labels = {
+      push_mention: 'Mention dalam komentar',
+      push_assign: 'Penugasan task',
+      push_comment: 'Komentar dalam percakapan Anda',
+      push_status: 'Perubahan status task Anda',
+      push_due: 'Pengingat deadline',
+    };
+    return `<h1>Notifikasi dalam aplikasi</h1><p class="lead">Notifikasi pribadi muncul di Inbox dan Notifications. Pengaturan ini disimpan untuk akun Anda.</p>${keys.map(key => srow(labels[key], key === 'push_due' ? 'Sehari sebelum deadline, pada hari deadline, dan saat terlambat.' : '', tog(key, D().notifPrefs[key] !== false, 'np'))).join('')}`;
+  }
+  if (getWorkspaceSession() && sec === 'notif-email')
+    return '<h1>Email</h1><p class="lead">Email ditunda. Mention, penugasan, komentar, dan pengingat tersedia melalui notifikasi dalam aplikasi.</p>';
   if (
     getWorkspaceSession() &&
     [

@@ -9,6 +9,8 @@ Fondasi yang sudah diimplementasikan:
 - Proyek dan task bersama: CRUD, assignee, status, prioritas, tanggal, label, subtask, dependency, arsip, dan pemulihan.
 - Board/List/Table/Calendar/Timeline memakai data database yang sama, termasuk drag-and-drop, pencarian, filter, sorting, dan saved views.
 - Deteksi konflik edit, retry penyimpanan, serta pembatasan akses proyek privat di backend.
+- Komentar/mention, edit/hapus komentar, reaksi, file asli privat, serta aktivitas kolaborasi.
+- Inbox/notifikasi pribadi, status baca dan preferensi per akun, pengingat deadline, serta task berulang dari server.
 - Migrasi PostgreSQL dalam schema privat, antrean email dengan retry, serta validasi dan izin di backend.
 - Tes API dengan PostgreSQL sungguhan, browser tests, dan CI.
 
@@ -34,9 +36,11 @@ Untuk membuat tabel tanpa terminal, buka **Supabase → SQL Editor → New query
 
 Setelah login, tampilan workspace asli tersedia kembali, termasuk Projects, Tasks, board/list/table/calendar/timeline/files. Pengelolaan akun dan anggota tersedia melalui **Kelola workspace**.
 
-**Proyek, task, dan saved views sudah tersimpan di PostgreSQL dan dibagikan sesuai izin workspace/proyek.** Preferensi tampilan disimpan per akun. Perubahan anggota lain dimuat otomatis sekitar setiap 10 detik saat halaman aktif dan tidak sedang diedit. Komentar, upload isi file, dan notifikasi kolaborasi masih tahap berikutnya; email tetap opsional.
+**Proyek, task, saved views, komentar, file asli, dan notifikasi sudah tersimpan di PostgreSQL.** Akses mengikuti izin workspace/proyek. Preferensi tampilan dan notifikasi disimpan per akun. Perubahan anggota lain dimuat sekitar setiap 10 detik saat halaman aktif dan tidak sedang diedit. Email tetap ditunda. Lihat [panduan fase 4–5](docs/collaboration.md) untuk batas file, task berulang, dan pengingat.
 
-**Upgrade dari versi sebelumnya:** sebelum merge/deploy versi ini, jalankan ulang seluruh [file migrasi SQL terbaru](docs/supabase-migration.sql) di Supabase SQL Editor. Migrasi lama dilewati; `002_project_content.sql` menambahkan tabel proyek/task tanpa menghapus akun. Data browser lama dapat dipindahkan lewat tombol **Impor data lokal lama** pada akun dan browser asal; data demo tidak diimpor otomatis.
+**Upgrade dari versi sebelumnya:** sebelum merge/deploy, jalankan seluruh [file migrasi SQL terbaru](docs/supabase-migration.sql) di Supabase SQL Editor. Migrasi lama dilewati; `003_collaboration_automation.sql` menambahkan tabel komentar, isi file, notifikasi, dan catatan otomatisasi tanpa menghapus akun/proyek/task. Data proyek/task browser lama dapat dipindahkan lewat **Impor data lokal lama** pada akun dan browser asal; data demo tidak diimpor otomatis.
+
+File maksimal **3 MB per file**, dengan kuota **100 MB/500 file per workspace**. Pengingat diperiksa saat workspace dibuka. Untuk pemeriksaan harian tanpa pengunjung di Vercel, tambahkan `CRON_SECRET` acak minimal 32 karakter; jadwal harian sudah tersedia di `vercel.json`. SMTP tidak diperlukan.
 
 ```bash
 npm run lint

@@ -4,11 +4,12 @@ import { A, IN } from './actions/actions.js';
 import { render } from './shell/render.js';
 import { toast } from './ui/toast.js';
 import { readApiResponse } from './foundation/http.js';
-import { S, proj, save, visibleProjects } from './core/store.js';
+import { S, proj, task, save, visibleProjects } from './core/store.js';
 import { openModal } from './overlays/modals.js';
 import { DRAG } from './actions/drag-drop.js';
 import { createContentSync } from './core/content-sync.js';
 import { localWorkspaceKey } from './core/workspace-session.js';
+import { initCollaboration } from './core/collaboration-client.js';
 
 const session = getWorkspaceSession();
 session.contentRevision = session.content.revision;
@@ -27,28 +28,32 @@ function renderSynced() {
   }
 }
 document.addEventListener('focusout', () => {
-  if (deferredRender) queueMicrotask(renderSynced);
+  if (deferredRender) setTimeout(renderSynced, 0);
 });
 document.addEventListener('pointerdown', event => {
-  if (event.target.closest?.('[draggable=true],[data-bar],[data-rsz]')) pointerEditing = true;
+  if (event.button === 0) pointerEditing = true;
 });
 function endPointerEdit() {
   pointerEditing = false;
   if (deferredRender) {
     deferredRender = false;
-    queueMicrotask(renderSynced);
+    // Let the click following pointerup reach its original target first.
+    setTimeout(renderSynced, 0);
   }
 }
 window.addEventListener('pointerup', endPointerEdit);
 document.addEventListener('dragend', endPointerEdit);
 document.addEventListener('drop', endPointerEdit);
+window.addEventListener('pointercancel', () => {
+  if (!DRAG) endPointerEdit();
+});
 const sync = createContentSync({
   initial: session.content,
   capture: () => ({
     projects: S.data.projects,
     tasks: S.data.tasks,
     savedViews: S.data.savedViews,
-    preferences: { prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed, projectOrder: S.data.projOrder },
+    preferences: { prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed, projectOrder: S.data.projOrder, notifPrefs: S.data.notifPrefs },
   }),
   request: async (method, body) => {
     try {
@@ -67,12 +72,22 @@ const sync = createContentSync({
   },
   apply: content => {
     session.contentRevision = content.revision;
+    const attachments = new Map(S.data.tasks.map(task => [task.id, task.attachments]));
     for (const key of ['projects', 'tasks', 'savedViews', 'activity']) S.data[key] = content[key];
+    if (!session.collabPending || session.collabRefreshing) {
+      S.data.files = content.files || [];
+      S.data.notifs = content.notifs || [];
+      S.data.commentTotals = content.commentTotals || {};
+      const comments = new Map(S.data.comments.filter(comment => S.data.tasks.some(task => task.id === comment.task)).map(comment => [comment.id, comment]));
+      for (const comment of content.comments || []) comments.set(comment.id, comment);
+      S.data.comments = [...comments.values()].sort((a, b) => a.at - b.at);
+    } else for (const task of S.data.tasks) task.attachments = attachments.get(task.id) || [];
     const ids = content.projects.map(p => p.id),
       order = content.preferences.projectOrder || [];
     S.data.projOrder = [...order.filter(id => ids.includes(id)), ...ids.filter(id => !order.includes(id))];
     if (content.preferences.views) S.views = content.preferences.views;
     if (content.preferences.prefs) Object.assign(S.prefs, content.preferences.prefs, { name: session.user.name });
+    S.data.notifPrefs = content.preferences.notifPrefs || {};
     renderSynced();
   },
   status: (state, message) => {
@@ -147,22 +162,27 @@ A.nativeRetry = () => {
   void sync.retry().catch(() => {});
 };
 A.nativeRefresh = () => {
-  void sync.refresh(true).catch(error => toast(error.message, { kind: 'err' }));
+  void sync
+    .refresh(true)
+    .then(() => session.refreshComments?.())
+    .catch(error => toast(error.message, { kind: 'err' }));
 };
 sync.schedule();
 setInterval(() => {
   if (document.hidden || DRAG || pointerEditing || document.activeElement?.matches('input,textarea,[contenteditable=true]')) return;
-  void sync.refresh().catch(() => {});
+  void sync
+    .refresh()
+    .then(() => session.refreshComments?.())
+    .catch(() => {});
 }, 10000);
 window.addEventListener('beforeunload', event => {
-  if (sync.hasUnsavedContent()) {
+  if (sync.hasUnsavedContent() || session.collabPending || S.ui.uploads?.length) {
     event.preventDefault();
     event.returnValue = '';
   }
 });
 const management = () => location.assign(`/?manage=1&workspace=${encodeURIComponent(session.workspace.id)}`);
 const unavailable = () => toast('Fitur ini belum terhubung ke layanan akun. Gunakan Kelola workspace untuk pengaturan anggota.', { kind: 'info' });
-const noSharedFiles = () => toast('Penyimpanan isi file belum terhubung ke server. File belum diunggah.', { kind: 'info' });
 A.nativeManage = management;
 A.share = el => openModal({ type: 'share', id: el.dataset.id });
 IN.nativeProjectPrivate = el => {
@@ -187,9 +207,12 @@ A.newTask = el => {
 };
 const pick = A.popPick;
 A.popPick = el => {
-  if (S.ui.pop?.type === 'recur') {
-    toast('Task berulang akan diaktifkan pada fase otomatisasi.', { kind: 'info' });
-    return;
+  if (S.ui.pop?.type === 'recur' && el.dataset.v !== 'Does not repeat') {
+    const target = S.ui.pop.id === '__form' ? S.ui.form : task(S.ui.pop.id);
+    if (!target?.due) {
+      toast('Tentukan deadline dahulu untuk task berulang.', { kind: 'info' });
+      return;
+    }
   }
   return S.ui.pop?.type === 'role' ? management() : pick(el);
 };
@@ -232,16 +255,16 @@ for (const key of [
   'doForgot',
   'resend',
   'auth',
-  'postComment',
-  'delComment',
 ])
   A[key] = unavailable;
 IN.sharePerm = unavailable;
 IN.shareAccess = unavailable;
-IN.uploadFiles = noSharedFiles;
-IN.formFiles = noSharedFiles;
 A.signOut = async () => {
   try {
+    if (session.collabPending) {
+      toast('Tunggu sampai komentar atau upload selesai.', { kind: 'info' });
+      return;
+    }
     await sync.flush();
     const response = await fetch('/api/auth/logout', {
       method: 'POST',
@@ -274,4 +297,5 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) void checkSession();
 });
 setInterval(checkSession, 60000);
+initCollaboration({ session, sync, renderSynced });
 render();

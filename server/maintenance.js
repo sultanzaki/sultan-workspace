@@ -1,4 +1,5 @@
 import { createMailer, deliverOne } from './mail.js';
+import { runAutomations } from './automations.js';
 
 export function createMaintenance(pool, config) {
   const deliver = createMailer(config);
@@ -21,7 +22,8 @@ export function createMaintenance(pool, config) {
         await pool.query("DELETE FROM password_resets WHERE expires_at < now() - interval '1 day'");
         cleanedAt = Date.now();
       }
-      return { processed };
+      const reminders = await runAutomations(pool);
+      return { processed, reminders };
     })().finally(() => {
       pending = null;
     });

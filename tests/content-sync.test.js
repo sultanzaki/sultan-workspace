@@ -8,6 +8,12 @@ test('diff ignores JSON object ordering while retaining actual field changes and
   assert.deepEqual(contentOperations({ projects: [{ id: 'p', name: 'A' }] }, { projects: [{ name: 'A', id: 'p' }] }), []);
   assert.deepEqual(contentOperations({ tasks: [{ id: 't' }] }, { tasks: [] }), [{ entity: 'task', id: 't', value: null }]);
 });
+test('server attachment metadata is excluded from task mutations', () => {
+  assert.deepEqual(
+    contentOperations({ tasks: [{ id: 't', title: 'Title', attachments: [] }] }, { tasks: [{ id: 't', title: 'Title', attachments: [{ id: 'real-file' }] }] }),
+    [],
+  );
+});
 test('edits made during a request are flushed afterwards without being overwritten', async () => {
   let current = { projects: [{ id: 'p', name: 'first' }], tasks: [], savedViews: [], preferences: {} };
   let release, started;

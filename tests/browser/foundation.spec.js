@@ -280,3 +280,181 @@ test('all workspace views use shared database content across accounts after clea
   await expect(page.getByLabel('Proyek privat', { exact: true })).toBeDisabled();
   expect(errors).toEqual([]);
 });
+
+test('comments, original files, notifications and recurring tasks work across two accounts', async ({ page, browser }) => {
+  test.setTimeout(90000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  const fixture = await page.evaluate(async () => {
+    const identity = await (await fetch('/api/auth/me')).json(),
+      ws = identity.workspaces[0].id;
+    const [workspace, state] = await Promise.all([
+      fetch(`/api/workspaces/${ws}`).then(r => r.json()),
+      fetch(`/api/workspaces/${ws}/content`).then(r => r.json()),
+    ]);
+    const member = workspace.members.find(m => m.email === 'member@example.test');
+    const project = {
+      ...state.projects[0],
+      id: 'browser-collab',
+      key: 'COL',
+      name: 'Collaboration workspace project',
+      private: false,
+      members: [identity.user.id],
+      seq: 401,
+    };
+    const task = {
+      ...state.tasks[0],
+      id: 'browser-collab-task',
+      project: project.id,
+      key: 'COL-401',
+      title: 'Collaborative task',
+      status: 'todo',
+      due: '2037-01-31',
+      start: '2037-01-29',
+      subtasks: [],
+      attachments: [],
+      deps: [],
+      recur: null,
+      assignee: member.id,
+      archived: false,
+      completedAt: null,
+    };
+    const response = await fetch(`/api/workspaces/${ws}/content`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': identity.csrfToken },
+      body: JSON.stringify({
+        revision: state.revision,
+        mutationId: crypto.randomUUID(),
+        operations: [
+          { entity: 'project', id: project.id, value: project },
+          { entity: 'task', id: task.id, value: task },
+        ],
+      }),
+    });
+    if (!response.ok) throw new Error('Fixture setup failed: ' + response.status);
+    return { ws, member: member.id, memberName: member.name };
+  });
+  const url = `/?workspace=${fixture.ws}#task=browser-collab-task`;
+  await page.goto(url);
+  let drawer = page.locator('.drawer');
+  await expect(drawer.getByLabel('Task title', { exact: true })).toHaveValue('Collaborative task');
+  await drawer.getByLabel('Comment', { exact: true }).fill('@');
+  await drawer.locator(`[data-a="pickMention"][data-mid="${fixture.member}"]`).click();
+  const original = `Please review @${fixture.memberName}`;
+  await drawer.getByLabel('Comment', { exact: true }).fill(original);
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await drawer.getByRole('button', { name: 'Comment', exact: true }).click();
+  await expect(drawer.locator('.cmt .txt')).toHaveText(original);
+  await drawer.getByRole('button', { name: 'Edit comment', exact: true }).click();
+  const updated = `Updated review @${fixture.memberName}`;
+  await page.getByLabel('Komentar', { exact: true }).fill(updated);
+  await page.getByRole('button', { name: 'Simpan komentar', exact: true }).click();
+  await expect(drawer.locator('.cmt .txt')).toHaveText(updated);
+  await drawer.getByRole('button', { name: 'Add reaction', exact: true }).click();
+  await page.getByRole('button', { name: 'React 👍', exact: true }).click();
+  await expect(drawer.getByRole('button', { name: '👍 1', exact: true })).toBeVisible();
+  const bytes = 'Original shared file contents\nNot a generated preview.\n';
+  let uploadAcknowledgementLost = false;
+  await page.route('**/files', async route => {
+    if (route.request().method() === 'POST' && !uploadAcknowledgementLost) {
+      uploadAcknowledgementLost = true;
+      await route.fetch();
+      return route.abort();
+    }
+    return route.continue();
+  });
+  await drawer
+    .locator('input[data-in="uploadFiles"]')
+    .first()
+    .setInputFiles({ name: 'shared-notes.txt', mimeType: 'text/plain', buffer: Buffer.from(bytes) });
+  await drawer.getByRole('button', { name: 'Coba upload lagi', exact: true }).click();
+  await expect(drawer.locator('.attc').filter({ hasText: 'shared-notes.txt' })).toBeVisible();
+  await page.unroute('**/files');
+  const uploadCount = await page.evaluate(
+    async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).files.filter(file => file.name === 'shared-notes.txt').length,
+    fixture.ws,
+  );
+  expect(uploadCount).toBe(1);
+  await drawer.locator('.attc').filter({ hasText: 'shared-notes.txt' }).click();
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Unduh file', exact: true }).click();
+  const download = await downloading;
+  expect(await readFile(await download.path(), 'utf8')).toBe(bytes);
+  await page
+    .getByRole('dialog')
+    .filter({ has: page.getByRole('button', { name: 'Unduh file', exact: true }) })
+    .getByRole('button', { name: 'Close', exact: true })
+    .last()
+    .click();
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jX1sAAAAASUVORK5CYII=', 'base64');
+  await drawer.locator('input[data-in="uploadFiles"]').first().setInputFiles({ name: 'pixel.png', mimeType: 'image/png', buffer: png });
+  await expect(drawer.locator('.attc img')).toBeVisible();
+  await expect.poll(() => drawer.locator('.attc img').evaluate(img => img.naturalWidth)).toBe(1);
+  const memberContext = await browser.newContext({ baseURL: 'http://localhost:5173', reducedMotion: 'reduce' }),
+    memberPage = await memberContext.newPage();
+  memberPage.on('pageerror', error => errors.push(error.message));
+  try {
+    await memberPage.goto('/');
+    await memberPage.getByLabel('Email', { exact: true }).fill('member@example.test');
+    await memberPage.getByLabel('Password', { exact: true }).fill('member-browser-password-123');
+    await memberPage.getByRole('button', { name: 'Login', exact: true }).click();
+    await memberPage.getByRole('navigation', { name: 'Main', exact: true }).locator('[data-r="inbox"]').click();
+    let notification = memberPage.locator('.inbox-list [data-a="selNotif"]').filter({ hasText: updated });
+    await expect(notification).toBeVisible();
+    await notification.click();
+    await expect(notification.locator('[aria-label="Unread"]')).toHaveCount(0);
+    await memberPage.getByLabel('Reply', { exact: true }).fill('Member reply saved to the database');
+    await memberPage.getByRole('button', { name: 'Reply', exact: true }).click();
+    await expect(memberPage.locator('.inbox-prev .cmt .txt').filter({ hasText: 'Member reply saved to the database' })).toBeVisible();
+    await memberPage.reload();
+    await memberPage.getByRole('navigation', { name: 'Main', exact: true }).locator('[data-r="inbox"]').click();
+    notification = memberPage.locator('.inbox-list [data-a="selNotif"]').filter({ hasText: updated });
+    await expect(notification.locator('[aria-label="Unread"]')).toHaveCount(0);
+    await memberPage.goto(url);
+    await expect(memberPage.locator('.drawer .attc').filter({ hasText: 'shared-notes.txt' })).toBeVisible();
+    await expect(memberPage.locator('.drawer .cmt .txt').filter({ hasText: updated })).toBeVisible();
+    await expect(memberPage.getByRole('button', { name: '👍 1', exact: true })).toBeVisible();
+    await memberPage.locator('.drawer .cmt').filter({ hasText: updated }).getByRole('button', { name: 'Add reaction', exact: true }).click();
+    await memberPage.getByRole('button', { name: 'React 🎉', exact: true }).click();
+    await expect(memberPage.getByRole('button', { name: '🎉 1', exact: true })).toBeVisible();
+    await page.locator('.drawer').getByRole('button', { name: 'Muat data terbaru', exact: true }).click();
+    await expect(drawer.locator('.cmt .txt').filter({ hasText: 'Member reply saved to the database' })).toBeVisible();
+    await expect(drawer.getByRole('button', { name: '🎉 1', exact: true })).toBeVisible();
+    await drawer.locator('[data-pop="recur"]').click();
+    await page.locator('[data-a="popPick"][data-v="Monthly"]').click();
+    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await drawer.locator('[data-a="toggleDone"]').first().click();
+    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    const tasks = await page.evaluate(
+      async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).tasks.filter(t => t.project === 'browser-collab'),
+      fixture.ws,
+    );
+    expect(tasks).toHaveLength(2);
+    expect(tasks.find(t => t.status === 'todo').due).toBe('2037-02-28');
+    expect(tasks.find(t => t.status === 'todo').attachments).toEqual([]);
+    await drawer.locator('[data-a="toggleDone"]').first().click();
+    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await drawer.locator('[data-a="toggleDone"]').first().click();
+    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    const count = await page.evaluate(
+      async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).tasks.filter(t => t.project === 'browser-collab').length,
+      fixture.ws,
+    );
+    expect(count).toBe(2);
+    await drawer.locator('.cmt').filter({ hasText: updated }).getByRole('button', { name: 'Delete comment', exact: true }).click();
+    await page.getByRole('button', { name: 'Hapus komentar', exact: true }).click();
+    await expect(drawer.locator('.cmt .txt').filter({ hasText: updated })).toHaveCount(0);
+    await memberPage.locator('.drawer').getByRole('button', { name: 'Muat data terbaru', exact: true }).click();
+    await expect(memberPage.locator('.drawer .cmt .txt').filter({ hasText: updated })).toHaveCount(0);
+    await expect(memberPage.locator('.drawer .cmt .txt').filter({ hasText: 'Member reply saved to the database' })).toBeVisible();
+  } finally {
+    await memberContext.close();
+  }
+  expect(errors).toEqual([]);
+});
