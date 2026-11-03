@@ -30,6 +30,7 @@ export function createMailer(config) {
         })
       : null;
   return async mail => {
+    if (config.MAIL_TRANSPORT === 'disabled') throw new Error('Email delivery is disabled');
     if (transport) {
       await transport.sendMail({ from: config.MAIL_FROM, to: mail.recipient, subject: mail.subject, text: mail.body });
     } else {

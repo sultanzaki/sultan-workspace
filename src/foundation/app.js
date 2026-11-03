@@ -2,6 +2,7 @@ import '../styles/tokens.css';
 import '../styles/base.css';
 import '../styles/components.css';
 import './foundation.css';
+import { readApiResponse } from './http.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const state = {
@@ -16,6 +17,7 @@ const state = {
   invite: null,
   token: '',
   busy: false,
+  features: { email: false },
 };
 const root = document.querySelector('#app');
 document.body.classList.add('foundation-mode');
@@ -38,13 +40,7 @@ async function api(path, method = 'GET', body) {
     headers: { ...(method !== 'GET' ? { 'Content-Type': 'application/json', 'X-CSRF-Token': state.csrfToken } : {}) },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
-  const data = response.status === 204 ? null : await response.json();
-  if (!response.ok) {
-    const error = new Error(data?.error || 'Permintaan gagal. Coba lagi.');
-    error.status = response.status;
-    throw error;
-  }
-  return data;
+  return readApiResponse(response);
 }
 function message(text, error = false) {
   const box = document.querySelector('#foundation-message');
@@ -158,7 +154,7 @@ function workspaceContent() {
     ${manager ? `<section class="foundation-panel"><h2>Riwayat administrasi</h2><p>100 kejadian terbaru.</p><ul class="foundation-audit">${state.audit.map(event => `<li><time>${esc(new Date(event.created_at).toLocaleString('id-ID'))}</time> · ${esc(event.actor)} · ${esc(event.action)}</li>`).join('')}</ul></section>` : ''}`;
 }
 function invitationContent() {
-  return `<section class="foundation-panel"><h2>Undang anggota</h2><p>Undangan berlaku 48 jam. Mengundang ulang akan membatalkan tautan sebelumnya.</p><form data-form="invite" class="foundation-inline">${field('Email penerima', 'email', 'email')}<div class="field"><label class="label" for="invite-role">Peran</label><select class="input" id="invite-role" name="role">${roles('member', false)}${state.workspace.role === 'owner' ? '<option value="admin">admin</option>' : ''}</select></div>${submit('Kirim undangan')}</form>
+  return `<section class="foundation-panel"><h2>Undang anggota</h2>${state.features.email ? `<p>Undangan berlaku 48 jam. Mengundang ulang akan membatalkan tautan sebelumnya.</p><form data-form="invite" class="foundation-inline">${field('Email penerima', 'email', 'email')}<div class="field"><label class="label" for="invite-role">Peran</label><select class="input" id="invite-role" name="role">${roles('member', false)}${state.workspace.role === 'owner' ? '<option value="admin">admin</option>' : ''}</select></div>${submit('Kirim undangan')}</form>` : '<p>Pengiriman email belum diaktifkan. Login dan pengelolaan workspace tetap tersedia. Admin perlu mengatur SMTP untuk mengirim undangan dan email pemulihan akun.</p>'}
     <h3>Undangan aktif</h3>${state.invitations.length ? `<ul>${state.invitations.map(i => `<li>${esc(i.email)} · ${esc(i.role)} · kedaluwarsa ${esc(new Date(i.expires_at).toLocaleString('id-ID'))} ${state.workspace.role === 'owner' || i.role === 'member' ? `<button class="btn btn-ghost" data-action="revoke" data-id="${i.id}">Batalkan undangan</button>` : ''}</li>`).join('')}</ul>` : '<p>Tidak ada undangan aktif.</p>'}
     <details><summary>Status pengiriman email undangan</summary><ul>${state.mail.map(mail => `<li>${esc(mail.recipient)} · ${mail.sent_at ? 'Terkirim ke layanan email' : mail.attempts ? 'Pengiriman gagal, dijadwalkan ulang' : 'Menunggu pengiriman'}</li>`).join('') || '<li>Belum ada pengiriman.</li>'}</ul></details></section>`;
 }

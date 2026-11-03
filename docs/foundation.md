@@ -12,7 +12,7 @@ Browser → `/api` pada origin yang sama → Express → PostgreSQL schema `app_
 
 Supabase digunakan **hanya sebagai PostgreSQL**. Tidak memakai Supabase Auth, SDK browser, anon key, service-role key, atau REST API Supabase. Kredensial database hanya ada pada proses backend. Jangan memasukkan kredensial ke variabel `VITE_*`.
 
-Pada development, Vite mem-proxy `/api` ke port 3001. Pada production, `npm start` menjalankan API sekaligus menyajikan `dist/`. Hosting static saja (termasuk konfigurasi Vercel lama) tidak cukup untuk aplikasi ini.
+Pada development, Vite mem-proxy `/api` ke port 3001. Di Vercel, `api/[...path].js` menjalankan API sebagai satu Node.js Function dan `dist/` disajikan sebagai frontend. Pada server biasa, `npm start` tetap menjalankan API sekaligus menyajikan `dist/`.
 
 ## Menjalankan lokal
 
@@ -45,7 +45,7 @@ npm run dev
 
 Jangan menggunakan password contoh. CLI menerima password melalui stdin, bukan argumen proses atau log. Bootstrap hanya berhasil saat belum ada user; tidak ada endpoint registrasi publik atau password default. Email owner awal dipercaya sebagai input operator; email anggota berikutnya diverifikasi lewat kepemilikan tautan undangan. Pastikan email bootstrap milik operator yang sah.
 
-Development memakai `MAIL_TRANSPORT=file`: email hanya ditulis ke `.local/mail/*.json`, **tidak dikirim ke penerima**. File tersebut memuat tautan sensitif; jangan dibagikan, dimasukkan Git, atau diunggah sebagai artefak CI. Aplikasi production menolak mode file. Backend membersihkan isi email yang sudah dikirim dari outbox database dan menghapus pesan outbox yang lebih dari tujuh hari.
+Development memakai `MAIL_TRANSPORT=file`: email hanya ditulis ke `.local/mail/*.json`, **tidak dikirim ke penerima**. File tersebut memuat tautan sensitif; jangan dibagikan, dimasukkan Git, atau diunggah sebagai artefak CI. Aplikasi production menolak mode file. Tanpa konfigurasi SMTP, production memakai `MAIL_TRANSPORT=disabled`: login dan administrasi tetap berjalan, sedangkan undangan dan reset lewat email dinonaktifkan secara eksplisit. Backend membersihkan isi email yang sudah dikirim dari outbox database dan menghapus pesan outbox yang lebih dari tujuh hari.
 
 ## Menggunakan Supabase PostgreSQL
 
@@ -53,7 +53,7 @@ Development memakai `MAIL_TRANSPORT=file`: email hanya ditulis ke `.local/mail/*
 2. Masukkan `DATABASE_URL` pada secret manager hosting/backend. Untuk lokal, gunakan `.env.local` yang diabaikan Git. Tidak perlu mengaktifkan Supabase Auth atau memberikan API key.
 3. Koneksi remote selalu menggunakan TLS dengan verifikasi sertifikat aktif. Jika diperlukan, unduh sertifikat CA database dari project Supabase dan set `DATABASE_CA_FILE` ke file tersebut. Jangan menggunakan `rejectUnauthorized=false` atau menonaktifkan TLS.
 4. Jalankan `npm run db:migrate` dari koneksi yang berwenang membuat schema/tabel. Migrasi memakai transaksi, advisory lock, dan checksum; aman dijalankan ulang. Jangan mengubah file migrasi yang telah diterapkan: tambahkan migrasi baru.
-5. Buat owner dengan CLI di atas, lalu konfigurasi SMTP sungguhan sebelum deployment production.
+5. Buat owner dengan CLI di atas. SMTP dapat menyusul; tanpa SMTP, login owner tetap tersedia tetapi undangan dan reset melalui email belum tersedia.
 
 Schema `app_private` tidak boleh ditambahkan ke daftar exposed schemas Supabase. Migrasi mencabut akses schema dari PUBLIC dan role `anon`/`authenticated` bila tersedia. Migrasi pertama tidak mengubah tabel proyek Supabase lain. Gunakan database/project development terpisah dari production.
 
@@ -61,11 +61,37 @@ Untuk production, gunakan role migrasi pemilik schema dan role runtime terpisah 
 
 Verifikasi koneksi Supabase belum dilakukan tanpa kredensial project. Tes yang tersedia menggunakan PostgreSQL lokal; ini membuktikan logika aplikasi, bukan akses/konfigurasi project Supabase tertentu.
 
+## Migrasi melalui Supabase SQL Editor (tanpa terminal)
+
+1. Buka project Supabase yang sama dengan `DATABASE_URL` di Vercel.
+2. Pilih **SQL Editor → New query**.
+3. Buka [supabase-migration.sql](supabase-migration.sql), salin **seluruh isi file**, lalu tempel ke query tersebut.
+4. Klik **Run**. Ini membuat schema `app_private`, tabel aplikasi, dan catatan versi migrasi. Tidak menghapus data yang sudah ada; jika dijalankan lagi, migrasi yang sudah tercatat dilewati setelah checksum diperiksa.
+5. Jika berhasil, jalankan query pemeriksaan berikut. Hasilnya harus memuat `001_foundation.sql`.
+
+```sql
+select name, applied_at from app_private.schema_migrations;
+```
+
+File ini dihasilkan dari migrasi yang sama dengan CLI. Pengembang dapat membuat ulang melalui `node scripts/export-migrations.js > docs/supabase-migration.sql`. Tidak ada password atau connection string di file migrasi. Migrasi membuat tabel, **bukan membuat akun login**; owner pertama tetap dibuat melalui CLI privat.
+
+## Deployment Vercel
+
+1. Merge perubahan yang menyediakan `api/[...path].js` dan `vercel.json`. Vercel membangun frontend dan function API dari repository yang sama.
+2. Di **Settings → Environment Variables**, simpan `DATABASE_URL` sebagai secret backend. Gunakan **Session pooler Supabase port 5432**. Jangan beri prefix `VITE_`. Pisahkan koneksi Preview dari Production agar percobaan PR tidak memakai database operasional.
+3. Set `APP_ORIGIN=https://sultan-workspace.vercel.app` untuk domain utama Anda (ubah jika memakai domain sendiri). Bila tidak diisi, backend menggunakan metadata domain Vercel yang disediakan platform. Nilai harus tanpa slash terakhir atau path.
+4. Tanpa SMTP, biarkan `MAIL_TRANSPORT` tidak diisi atau isi `disabled`. Jangan memakai `file` di Vercel. Saat SMTP tersedia, set konfigurasi SMTP di atas.
+5. Jika database memerlukan CA khusus, isi `DATABASE_CA_PEM` dengan sertifikat CA database dari Supabase. Verifikasi TLS tidak dinonaktifkan. `DB_POOL_MAX` default 2 per instance function dan pool didaftarkan melalui `attachDatabasePool` agar koneksi idle dapat dilepas saat instance dihentikan.
+6. Jalankan migrasi melalui SQL Editor di atas atau CLI privat. Buat akun owner dengan CLI. Jangan menaruh migrasi/bootstrap pada build atau endpoint publik.
+7. Redeploy setelah mengubah environment variables. Buka `/api/health`: hasil normal adalah `{"status":"ok"}`. Tanpa sesi login, `/api/auth/me` semestinya mengembalikan JSON 401, bukan halaman 404 Vercel. Bila migrasi belum dijalankan, API mengembalikan JSON 503 dengan instruksi migrasi.
+
+Saat email diaktifkan, proses pengiriman dicoba sesudah request. Agar retry tetap berjalan ketika tidak ada pengunjung, gunakan scheduler yang memanggil `GET /api/internal/maintenance` dengan header `Authorization: Bearer <CRON_SECRET>`, lalu set `CRON_SECRET` acak minimal 32 karakter di Vercel. Setiap pemanggilan menangani maksimal satu pesan. Pilih frekuensi yang sesuai jumlah pesan dan masa berlaku token (reset 30 menit). Tidak ada jadwal cron yang diaktifkan otomatis: Vercel Hobby hanya mengizinkan cron harian sehingga tidak cukup untuk retry reset password tepat waktu; gunakan paket/scheduler yang mendukung interval lebih sering sebelum mengandalkan email operasional. Endpoint menolak request tanpa secret. Selama email disabled, pengaturan scheduler tidak diperlukan untuk login.
+
 ## Autentikasi dan izin
 
 - Password di-hash dengan scrypt (`N=65536`, `r=8`, `p=1`), salt acak per password. Maksimal 128 karakter; tidak ada password plaintext di database atau log.
 - Sesi memakai token acak 256-bit; hanya hash token disimpan di database. Cookie `HttpOnly`, `SameSite=Lax`, dan `Secure` dengan prefix `__Host-` pada production. Durasi 12 jam atau 30 hari bila pengguna memilih "ingat saya"; tidak ada perpanjangan tanpa batas.
-- Request yang mengubah data memerlukan origin persis `APP_ORIGIN`, JSON, dan untuk sesi login token CSRF. Tidak ada CORS lintas origin. Jangan mengaktifkan proxy trust tanpa batas; set `TRUST_PROXY_HOPS` sesuai jumlah proxy yang benar-benar Anda kelola.
+- Request yang mengubah data memerlukan origin persis `APP_ORIGIN`, JSON, dan untuk sesi login token CSRF. Tidak ada CORS lintas origin. Vercel menerima origin utama dan hostname deployment/branch yang disediakan platform secara persis, tanpa wildcard. Jangan mengaktifkan proxy trust tanpa batas; `TRUST_PROXY_HOPS` default 1 pada Vercel dan 0 pada server biasa. Sesuaikan jika Anda menambah proxy sendiri.
 - Rate limit tersimpan di PostgreSQL, sehingga berlaku antar-instance/restart. Login dan reset dibatasi menurut IP dan email; hindari mencatat IP/email mentah pada tabel limiter.
 - Undangan 48 jam, reset 30 menit; token sekali pakai dan hash-nya disimpan di tabel autentikasi. Tautan membawa token pada URL fragment, lalu frontend menghapusnya dari address bar. Isi email antrean memang memuat token sampai dikirim; batasi akses/backup database dan file development.
 - Akun yang sudah terdaftar harus login sebagai penerima undangan. Undangan tidak bisa mengganti password akun tersebut. Reset password mencabut semua sesi akun; logout mencabut sesi yang dipakai saat itu.
@@ -86,9 +112,9 @@ Workspace harus selalu memiliki minimal satu owner aktif. Perubahan keanggotaan 
 
 ## Email dan operasi production
 
-Set `NODE_ENV=production`, `APP_ORIGIN=https://domain-anda`, `DATABASE_URL`, `MAIL_TRANSPORT=smtp`, `MAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, dan bila dibutuhkan `SMTP_USER`/`SMTP_PASSWORD`. `SMTP_SECURE=true` untuk TLS langsung (umumnya port 465); selain itu STARTTLS wajib. Verifikasi sertifikat tetap aktif. Konfigurasi SPF/DKIM/DMARC pada domain pengirim melalui penyedia email.
+Untuk server biasa, set `NODE_ENV=production`, `APP_ORIGIN=https://domain-anda`, dan `DATABASE_URL`. Untuk mengaktifkan email, tambahkan `MAIL_TRANSPORT=smtp`, `MAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, dan bila dibutuhkan `SMTP_USER`/`SMTP_PASSWORD`. Tanpa SMTP, production memakai mode disabled; tidak ada klaim email sudah terkirim. `SMTP_SECURE=true` untuk TLS langsung (umumnya port 465); selain itu STARTTLS wajib. Verifikasi sertifikat tetap aktif. Konfigurasi SPF/DKIM/DMARC pada domain pengirim melalui penyedia email.
 
-Outbox ditulis dalam transaksi yang sama dengan undangan/reset. Worker dalam proses backend mengirim antrean dan menjadwalkan ulang kegagalan dengan backoff. Multiple instance memakai `FOR UPDATE SKIP LOCKED`. Seperti umumnya sistem email, crash setelah SMTP menerima pesan tetapi sebelum commit dapat menyebabkan pengiriman ulang; token tetap hanya dapat digunakan sekali. Status terkirim berarti layanan SMTP menerima pesan, bukan bukti pesan sampai inbox. Pantau antrean dan kegagalan SMTP, serta siapkan alert sebelum penggunaan operasional.
+Outbox ditulis dalam transaksi yang sama dengan undangan/reset. Pada server biasa, worker berkala mengirim antrean dan menjadwalkan ulang kegagalan dengan backoff. Di Vercel, `waitUntil` menjalankan pekerjaan terbatas setelah respons, tanpa interval yang mengandalkan proses terus hidup. Multiple instance memakai `FOR UPDATE SKIP LOCKED`. Seperti umumnya sistem email, crash setelah SMTP menerima pesan tetapi sebelum commit dapat menyebabkan pengiriman ulang; token tetap hanya dapat digunakan sekali. Status terkirim berarti layanan SMTP menerima pesan, bukan bukti pesan sampai inbox. Pantau antrean dan kegagalan SMTP, serta siapkan alert sebelum penggunaan operasional.
 
 Deployment:
 
