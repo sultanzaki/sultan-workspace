@@ -20,9 +20,15 @@ try {
 let pointerEditing = false,
   deferredRender = false;
 function renderSynced() {
-  if (DRAG || pointerEditing) deferredRender = true;
-  else render();
+  if (DRAG || pointerEditing || document.activeElement?.matches('input,textarea,[contenteditable=true]')) deferredRender = true;
+  else {
+    deferredRender = false;
+    render();
+  }
 }
+document.addEventListener('focusout', () => {
+  if (deferredRender) queueMicrotask(renderSynced);
+});
 document.addEventListener('pointerdown', event => {
   if (event.target.closest?.('[draggable=true],[data-bar],[data-rsz]')) pointerEditing = true;
 });

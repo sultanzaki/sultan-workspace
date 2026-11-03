@@ -205,8 +205,11 @@ test('all workspace views use shared database content across accounts after clea
     await expect(page.locator('.content')).not.toContainText('Something went wrong.');
   }
   await page.locator('.content [data-tab="table"]').click();
+  await page.locator('th [data-f="title"]').click();
   await page.locator('td[data-f="estimate"]').click();
   await page.getByLabel('Estimate', { exact: true }).fill('5d');
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.getByLabel('Estimate', { exact: true })).toHaveValue('5d');
   await page.getByLabel('Estimate', { exact: true }).press('Enter');
   await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
   await page.locator('td[data-f="title"]').click();
