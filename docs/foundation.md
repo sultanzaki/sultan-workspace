@@ -12,7 +12,7 @@ Browser → `/api` pada origin yang sama → Express → PostgreSQL schema `app_
 
 Supabase digunakan **hanya sebagai PostgreSQL**. Tidak memakai Supabase Auth, SDK browser, anon key, service-role key, atau REST API Supabase. Kredensial database hanya ada pada proses backend. Jangan memasukkan kredensial ke variabel `VITE_*`.
 
-Pada development, Vite mem-proxy `/api` ke port 3001. Di Vercel, `api/[...path].js` menjalankan API sebagai satu Node.js Function dan `dist/` disajikan sebagai frontend. Pada server biasa, `npm start` tetap menjalankan API sekaligus menyajikan `dist/`.
+Pada development, Vite mem-proxy `/api` ke port 3001. Di Vercel, rewrite eksplisit `/api/:path*` mengarahkan semua kedalaman URL ke `api/index.js`, yang menjalankan API sebagai satu Node.js Function dan `dist/` disajikan sebagai frontend. Pada server biasa, `npm start` tetap menjalankan API sekaligus menyajikan `dist/`.
 
 ## Menjalankan lokal
 
@@ -89,7 +89,7 @@ File ini dihasilkan dari migrasi yang sama dengan CLI. Pengembang dapat membuat 
 
 ## Deployment Vercel
 
-1. Merge perubahan yang menyediakan `api/[...path].js` dan `vercel.json`. Vercel membangun frontend dan function API dari repository yang sama.
+1. Merge perubahan yang menyediakan `api/index.js` dan `vercel.json`. Vercel membangun frontend dan function API dari repository yang sama.
 2. Di **Settings → Environment Variables**, simpan `DATABASE_URL` sebagai secret backend. Gunakan **Session pooler Supabase port 5432**. Jangan beri prefix `VITE_`. Pisahkan koneksi Preview dari Production agar percobaan PR tidak memakai database operasional.
 3. Set `APP_ORIGIN=https://sultan-workspace.vercel.app` untuk domain utama Anda (ubah jika memakai domain sendiri). Bila tidak diisi, backend menggunakan metadata domain Vercel yang disediakan platform. Nilai harus tanpa slash terakhir atau path.
 4. Tanpa SMTP, biarkan `MAIL_TRANSPORT` tidak diisi atau isi `disabled`. Jangan memakai `file` di Vercel. Saat SMTP tersedia, set konfigurasi SMTP di atas.

@@ -6,11 +6,26 @@ import { readConfig } from '../server/config.js';
 import { createPool, migrate } from '../server/db.js';
 import { bootstrap } from '../server/bootstrap.js';
 import { createApp } from '../server/app.js';
-import { createVercelHandler } from '../server/vercel.js';
+import { createVercelHandler, restoreApiPath } from '../server/vercel.js';
 import { readApiResponse } from '../src/foundation/http.js';
 import { migrationSql } from '../scripts/export-migrations.js';
 import { testConfig } from './database.js';
 import { initializationDiagnostic } from '../server/diagnostics.js';
+
+test('Vercel explicitly rewrites nested API routes into one function', async () => {
+  const config = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8'));
+  assert.ok(config.functions['api/index.js']);
+  assert.deepEqual(config.rewrites, [{ source: '/api/:path*', destination: '/api?__route=:path*' }]);
+  for (const path of ['health', 'auth/me', 'auth/setup', 'auth/login', 'workspaces/123/teams']) {
+    const request = { url: '/api?__route=' + encodeURIComponent(path) };
+    assert.equal(restoreApiPath(request), true);
+    assert.equal(request.url, '/api/' + path);
+  }
+  const original = { url: '/api/auth/setup?__route=ignored&other=value' };
+  assert.equal(restoreApiPath(original), true);
+  assert.equal(original.url, '/api/auth/setup?other=value');
+  assert.equal(restoreApiPath({ url: '/api?__route=..%2Fauth%2Fsetup' }), false);
+});
 
 test('initialization diagnostics identify safe categories without exposing credentials', () => {
   const sensitive = 'postgresql://user:private-password@private-host/database';
@@ -132,7 +147,12 @@ test('SQL Editor migrations and the Vercel function share the real database cont
       deferred.push(promise);
     },
   });
-  const server = createServer(handler);
+  const server = createServer((req, res) => {
+    // Exercise the actual rewrite destination, not only bare Express routes.
+    const original = new URL(req.url, 'http://internal');
+    req.url = '/api?__route=' + encodeURIComponent(original.pathname.slice('/api/'.length));
+    void handler(req, res);
+  });
   server.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -189,6 +209,10 @@ test('SQL Editor migrations and the Vercel function share the real database cont
     assert.equal(opens, 2);
     assert.equal(builds, 1);
     assert.equal(registrations, 2);
+    const setup = await request('/api/auth/setup');
+    assert.equal(setup.status, 200);
+    assert.deepEqual(await setup.json(), { available: false });
+    assert.equal((await request('/api/auth/me')).status, 401);
   });
   await t.test('production login works without SMTP and issues a secure cookie', async () => {
     const login = await request('/api/auth/login', { method: 'POST', body: { email: 'vercel-owner@example.test', password: 'vercel-test-password-123' } });

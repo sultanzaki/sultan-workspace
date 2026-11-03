@@ -18,7 +18,7 @@ const state = {
   token: '',
   busy: false,
   features: { email: false },
-  setupAvailable: false,
+  setupAvailable: null,
 };
 const root = document.querySelector('#app');
 document.body.classList.add('foundation-mode');
@@ -101,6 +101,8 @@ async function refresh(id) {
 }
 function authContent() {
   if (state.view === 'setup') {
+    if (state.setupAvailable === null)
+      return '<h1>Setup belum dapat dimuat</h1><p>Layanan akun belum dapat dihubungi. Coba muat ulang setelah layanan kembali tersedia.</p>';
     if (!state.setupAvailable)
       return '<h1>Setup owner tidak tersedia</h1><p>Setup belum diaktifkan atau akun pertama sudah dibuat. Jika akun sudah tersedia, lanjutkan ke login.</p><button class="btn" data-action="login-view">Ke login</button>';
     return `<h1>Buat akun owner</h1><p class="sub">Setup sekali pakai untuk pemilik workspace. Gunakan kunci setup yang Anda simpan di Vercel.</p><form data-form="owner-setup">${field('Kunci setup', 'setupToken', 'password', '', 'autocomplete="off" minlength="32" maxlength="256"')}${field('Nama lengkap', 'name', 'text', '', 'autocomplete="name" maxlength="100"')}${field('Email owner', 'email', 'email', '', 'autocomplete="username"')}${field('Nama workspace', 'workspace', 'text', '', 'maxlength="100"')}${field('Password baru', 'password', 'password', '', 'autocomplete="new-password" minlength="12" maxlength="128"')}${field('Ulangi password', 'confirmation', 'password', '', 'autocomplete="new-password" minlength="12" maxlength="128"')}${submit('Buat akun owner')}</form>`;
@@ -310,6 +312,7 @@ async function boot() {
   state.invite = null;
   state.token = '';
   state.view = 'login';
+  state.setupAvailable = null;
   const setup = location.hash === '#setup';
   if (setup) state.view = 'setup';
   const hash = location.hash.slice(1).match(/^(invite|reset)=([a-f0-9]{64})$/);
