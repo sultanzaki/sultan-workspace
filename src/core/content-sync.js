@@ -63,6 +63,15 @@ export function createContentSync({ initial, capture, apply, request, status, ba
         retryRequest = null;
         retrySnapshot = null;
         if (stable(capture()) !== stable(submitted) && result.revision !== body.revision + (body.operations.length ? 1 : 0)) {
+          // Preferences belong to this account and do not compete with shared
+          // project edits. Adopt the latest domain snapshot while retaining
+          // preferences edited in flight; the next iteration saves those.
+          if (!contentOperations(submitted, capture()).length) {
+            const preferences = clone(capture().preferences);
+            base = clone(result);
+            apply({ ...result, preferences });
+            continue;
+          }
           blocked = Object.assign(new Error('Data telah berubah saat Anda mengedit. Muat data terbaru; draft Anda tetap disimpan.'), { status: 409 });
           backup(capture());
           status('conflict', blocked.message);
