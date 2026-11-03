@@ -292,7 +292,7 @@ export function registerContent(app, pool, authenticated) {
               user,
               project.id,
               op.entity === 'task' ? op.id : null,
-              op.entity === 'task' ? 'deleted' : 'deleted project',
+              op.entity === 'task' ? 'deleted' : op.entity === 'event' ? 'deleted calendar event' : 'deleted project',
             ]);
             if (op.entity === 'project') projects.delete(op.id);
             continue;
@@ -386,7 +386,17 @@ export function registerContent(app, pool, authenticated) {
               user,
               project.id,
               op.entity === 'task' ? op.id : null,
-              op.entity === 'project' ? (existing ? 'updated project' : 'created project') : existing ? 'updated' : 'created',
+              op.entity === 'project'
+                ? existing
+                  ? 'updated project'
+                  : 'created project'
+                : op.entity === 'event'
+                  ? existing
+                    ? 'updated calendar event'
+                    : 'created calendar event'
+                  : existing
+                    ? 'updated'
+                    : 'created',
             ]);
         }
         // Validate dependencies after the whole batch, including cross-task deletes.

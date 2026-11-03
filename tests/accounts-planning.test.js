@@ -297,7 +297,9 @@ test('accounts, administration and planning use real database state and enforce 
       link: 'https://meet.example.test/',
       type: 'meeting',
     };
-    let result = expectStatus(await write(owner, [op('event', event)]), 200).events[0];
+    const createdContent = expectStatus(await write(owner, [op('event', event)]), 200);
+    assert.ok(createdContent.activity.some(a => a.verb === 'created calendar event'));
+    let result = createdContent.events[0];
     assert.equal(result.startsAt, '2037-05-04T02:00:00.000Z');
     assert.equal(result.endsAt, '2037-05-04T03:00:00.000Z');
     assert.deepEqual(eventSlot(result, 'America/Los_Angeles'), { date: '2037-05-03', time: '19:00', label: '19:00' });
@@ -320,7 +322,9 @@ test('accounts, administration and planning use real database state and enforce 
     assert.equal(prefs.prefs.lang, 'id-ID');
     assert.equal(prefs.collapsed, true);
     assert.equal((await snapshot()).preferences.prefs, undefined);
-    expectStatus(await write(owner, [{ entity: 'event', id: 'meeting', value: null }]), 200);
+    const deletedContent = expectStatus(await write(owner, [{ entity: 'event', id: 'meeting', value: null }]), 200);
+    assert.ok(deletedContent.activity.some(a => a.verb === 'deleted calendar event'));
+    assert.ok(!deletedContent.activity.some(a => a.verb === 'deleted project'));
     assert.equal((await snapshot()).events.length, 0);
   });
   await t.test('deadline labels follow each recipient timezone and stay idempotent', async () => {
