@@ -4,10 +4,10 @@ import sanitizeHtml from 'sanitize-html';
 import { transaction } from './db.js';
 import { membership, fail, digest, limit } from './security.js';
 import { canReadProject } from './content-access.js';
-import { collaborationSnapshot, taskResourcesMoved } from './collaboration.js';
+import { collaborationSnapshotSql, formatCollaborationSnapshot, taskResourcesMoved } from './collaboration.js';
 import { RECURRENCE, dueReminders, taskChanged } from './automations.js';
 import { projectAllows, ACCESS_LEVELS } from '../src/core/permissions.js';
-import { workspaceDirectory } from './directory.js';
+import { workspaceDirectorySql, formatWorkspaceDirectory } from './directory.js';
 import { eventSchema, normalizeEvent } from './planning.js';
 
 function parse(schema, value) {
@@ -211,17 +211,19 @@ async function snapshot(db, ws, user, role) {
   const row = (
     await db.query(
       `SELECT
-    coalesce((SELECT jsonb_agg(data ORDER BY id) FROM tasks WHERE workspace_id=$1 AND project_id=ANY($2::text[])),'[]') AS tasks,
-    coalesce((SELECT jsonb_agg(data ORDER BY id) FROM saved_views WHERE workspace_id=$1 AND project_id=ANY($2::text[])),'[]') AS views,
-    coalesce((SELECT jsonb_agg(data ORDER BY id) FROM calendar_events WHERE workspace_id=$1 AND project_id=ANY($2::text[])),'[]') AS events,
+    coalesce((SELECT jsonb_agg(data ORDER BY id) FROM tasks WHERE workspace_id=$1 AND project_id=ANY($3::text[])),'[]') AS tasks,
+    coalesce((SELECT jsonb_agg(data ORDER BY id) FROM saved_views WHERE workspace_id=$1 AND project_id=ANY($3::text[])),'[]') AS views,
+    coalesce((SELECT jsonb_agg(data ORDER BY id) FROM calendar_events WHERE workspace_id=$1 AND project_id=ANY($3::text[])),'[]') AS events,
     coalesce((SELECT revision FROM content_versions WHERE workspace_id=$1),0) AS revision,
-    coalesce((SELECT data FROM workspace_preferences WHERE workspace_id=$1 AND user_id=$3),'{}') AS preferences,
-    coalesce((SELECT jsonb_agg(to_jsonb(a)) FROM (SELECT * FROM content_activity WHERE workspace_id=$1 AND project_id=ANY($2::text[]) ORDER BY at DESC LIMIT 200) a),'[]') AS activities`,
-      [ws, ids, user],
+    coalesce((SELECT data FROM workspace_preferences WHERE workspace_id=$1 AND user_id=$2),'{}') AS preferences,
+    coalesce((SELECT jsonb_agg(to_jsonb(a)) FROM (SELECT * FROM content_activity WHERE workspace_id=$1 AND project_id=ANY($3::text[]) ORDER BY at DESC LIMIT 200) a),'[]') AS activities,
+    (SELECT to_jsonb(c) FROM (${collaborationSnapshotSql}) c) AS collaboration,
+    (SELECT to_jsonb(d) FROM (${workspaceDirectorySql}) d) AS directory`,
+      [ws, user, ids],
     )
   ).rows[0];
-  const collaboration = await collaborationSnapshot(db, ws, user, ids);
-  const directory = await workspaceDirectory(db, ws, user, role, projects);
+  const collaboration = formatCollaborationSnapshot(row.collaboration);
+  const directory = formatWorkspaceDirectory(row.directory, user, role, projects);
   const favorites = row.preferences.favorites || { projects: projects.filter(p => p.fav).map(p => p.id), tasks: row.tasks.filter(t => t.fav).map(t => t.id) };
   projects = projects.map(p => ({ ...p, fav: favorites.projects.includes(p.id) }));
   return {
@@ -255,23 +257,34 @@ export function registerContent(app, pool, authenticated) {
     const hash = digest(JSON.stringify(input));
     const result = await transaction(pool, async db => {
       const role = await membership(db, ws, user, ['owner', 'admin', 'member', 'guest'], true);
-      const previous = await db.query('SELECT digest FROM content_mutations WHERE workspace_id=$1 AND user_id=$2 AND id=$3', [ws, user, input.mutationId]);
-      if (previous.rowCount) {
-        if (previous.rows[0].digest !== hash) fail(409, 'ID perubahan sudah dipakai. Muat ulang data.');
+      // The workspace lock above serializes revision checks and idempotent retries.
+      const current = (
+        await db.query(
+          `SELECT coalesce((SELECT revision FROM content_versions WHERE workspace_id=$1),0) AS revision,
+          (SELECT digest FROM content_mutations WHERE workspace_id=$1 AND user_id=$2 AND id=$3) AS digest`,
+          [ws, user, input.mutationId],
+        )
+      ).rows[0];
+      if (current.digest) {
+        if (current.digest !== hash) fail(409, 'ID perubahan sudah dipakai. Muat ulang data.');
         return snapshot(db, ws, user, role);
       }
-      await db.query('INSERT INTO content_versions(workspace_id) VALUES ($1) ON CONFLICT DO NOTHING', [ws]);
-      const current = await db.query('SELECT revision FROM content_versions WHERE workspace_id=$1', [ws]);
-      if (input.operations.length && current.rows[0].revision !== input.revision)
+      if (input.operations.length && current.revision !== input.revision)
         fail(409, 'Data telah diubah anggota lain. Muat data terbaru sebelum melanjutkan; perubahan Anda belum disimpan.');
       if (new Set(input.operations.map(op => op.entity + ':' + op.id)).size !== input.operations.length) fail(400, 'Perubahan ganda tidak valid.');
       if (input.operations.length) {
-        const activeRoles = new Map(
-          (await db.query('SELECT user_id,role FROM memberships WHERE workspace_id=$1 AND active', [ws])).rows.map(row => [row.user_id, row.role]),
-        );
+        const context = (
+          await db.query(
+            `SELECT coalesce((SELECT jsonb_object_agg(user_id,role) FROM memberships WHERE workspace_id=$1 AND active),'{}') AS roles,
+            ARRAY(SELECT id FROM teams WHERE workspace_id=$1) AS teams,
+            coalesce((SELECT jsonb_agg(data) FROM projects WHERE workspace_id=$1),'[]') AS projects`,
+            [ws],
+          )
+        ).rows[0];
+        const activeRoles = new Map(Object.entries(context.roles));
         const active = [...activeRoles.keys()];
-        const teams = (await db.query('SELECT id FROM teams WHERE workspace_id=$1', [ws])).rows.map(row => row.id);
-        const projects = new Map((await db.query('SELECT data FROM projects WHERE workspace_id=$1', [ws])).rows.map(row => [row.data.id, row.data]));
+        const teams = context.teams;
+        const projects = new Map(context.projects.map(project => [project.id, project]));
         const checkProject = (pid, action = 'read') => {
           const p = projects.get(pid);
           if (!canRead(p, user, role)) fail(404, 'Proyek tidak ditemukan atau tidak dapat diakses.');
@@ -443,8 +456,13 @@ export function registerContent(app, pool, authenticated) {
           'INSERT INTO workspace_preferences(workspace_id,user_id,data) VALUES ($1,$2,$3) ON CONFLICT(workspace_id,user_id) DO UPDATE SET data=EXCLUDED.data',
           [ws, user, safePreferences(input.preferences)],
         );
-      if (input.operations.length) await db.query('UPDATE content_versions SET revision=revision+1 WHERE workspace_id=$1', [ws]);
-      await db.query('INSERT INTO content_mutations(workspace_id,user_id,id,digest) VALUES ($1,$2,$3,$4)', [ws, user, input.mutationId, hash]);
+      await db.query(
+        `WITH version AS (
+          INSERT INTO content_versions(workspace_id,revision) SELECT $1,1 WHERE $5::boolean
+          ON CONFLICT(workspace_id) DO UPDATE SET revision=content_versions.revision+1
+        ) INSERT INTO content_mutations(workspace_id,user_id,id,digest) VALUES ($1,$2,$3,$4)`,
+        [ws, user, input.mutationId, hash, input.operations.length > 0],
+      );
       return snapshot(db, ws, user, role);
     });
     res.json(result);

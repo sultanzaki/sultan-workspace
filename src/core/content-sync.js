@@ -4,6 +4,8 @@ const stable = value =>
   JSON.stringify(value, (key, item) =>
     item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item,
   );
+export const syncStatusText = (state, message) =>
+  state === 'saved' ? '' : message || { saving: 'Menyimpan…', conflict: 'Konflik perubahan', error: 'Perubahan belum tersimpan' }[state] || '';
 export function contentOperations(before, after) {
   const operations = [];
   for (const [entity, key] of Object.entries(collections)) {
@@ -18,25 +20,37 @@ export function contentOperations(before, after) {
 }
 export function createContentSync({ initial, capture, apply, request, status, backup }) {
   let base = clone(initial),
-    timer,
+    timer = null,
+    maxTimer = null,
     pending = null,
     blocked = null,
     retryRequest = null,
     retrySnapshot = null;
   const dirty = () => contentOperations(base, capture()).length > 0 || stable(base.preferences || {}) !== stable(capture().preferences);
   function schedule() {
-    clearTimeout(timer);
     if (blocked) {
       backup(capture());
       return;
     }
+    if (pending) return;
+    if (!dirty()) {
+      status('saved');
+      return;
+    }
     status('saving');
-    timer = setTimeout(() => {
+    // Group keystrokes, but keep continuous edits/renders from postponing forever.
+    clearTimeout(timer);
+    const submit = () => {
       void flush().catch(() => {});
-    }, 300);
+    };
+    timer = setTimeout(submit, 150);
+    maxTimer ??= setTimeout(submit, 1000);
   }
   function flush() {
     clearTimeout(timer);
+    clearTimeout(maxTimer);
+    timer = null;
+    maxTimer = null;
     if (pending) return pending;
     if (blocked) return Promise.reject(blocked);
     pending = (async () => {

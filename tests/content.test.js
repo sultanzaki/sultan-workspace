@@ -28,7 +28,24 @@ test('shared projects/tasks have real persistence, authorization and conflict co
   await pool.query("INSERT INTO memberships(workspace_id,user_id,role) VALUES ($1,$2,'member')", [first.workspaceId, member]);
   await pool.query("INSERT INTO workspaces(id,name) VALUES ($1,'Other')", [otherWs]);
   await pool.query("INSERT INTO memberships(workspace_id,user_id,role) VALUES ($1,$2,'owner')", [otherWs, outside]);
-  const app = await createApp(pool, config),
+  let queryCount = 0;
+  const measuredPool = {
+    query: (...args) => {
+      queryCount++;
+      return pool.query(...args);
+    },
+    connect: async () => {
+      const client = await pool.connect();
+      return {
+        query: (...args) => {
+          queryCount++;
+          return client.query(...args);
+        },
+        release: () => client.release(),
+      };
+    },
+  };
+  const app = await createApp(measuredPool, config),
     server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   t.after(async () => {
@@ -113,6 +130,16 @@ test('shared projects/tasks have real persistence, authorization and conflict co
       ...options,
     });
   }
+  await t.test('preferences can be the first write and retries leave the shared revision unchanged', async () => {
+    const body = { revision: 0, mutationId: randomUUID(), operations: [], preferences: { collapsed: true } };
+    const saved = await request(path, owner, body);
+    assert.equal(saved.status, 200);
+    assert.equal(saved.data.revision, 0);
+    assert.equal(saved.data.preferences.collapsed, true);
+    assert.equal((await request(path, owner, body)).data.revision, 0);
+    assert.equal((await request(path, owner, { ...body, preferences: { collapsed: false } })).status, 409);
+    assert.equal((await snapshot()).preferences.collapsed, true);
+  });
   await t.test('public project and task are visible to another account; invalid tenant/assignee is rejected', async () => {
     assert.deepEqual((await snapshot()).projects, []);
     let r = await write(owner, [
@@ -129,6 +156,24 @@ test('shared projects/tasks have real persistence, authorization and conflict co
     r = await write(user, [operation('task', task('t1', 'p1', { assignee: outside }))]);
     assert.equal(r.status, 400);
     assert.equal((await snapshot()).tasks[0].assignee, member);
+  });
+  await t.test('a normal task save and refresh stay within the database round-trip budget', async () => {
+    const before = await snapshot();
+    queryCount = 0;
+    const result = await request(path, owner, {
+      revision: before.revision,
+      mutationId: randomUUID(),
+      operations: [operation('task', { ...before.tasks[0], title: 'Updated title' })],
+      preferences: before.preferences,
+    });
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    assert.ok(queryCount <= 16, `Task save used ${queryCount} sequential database round trips (budget: 16)`);
+    assert.equal(result.data.tasks[0].title, 'Updated title');
+    assert.equal(result.data.revision, before.revision + 1);
+    queryCount = 0;
+    const fresh = await snapshot();
+    assert.ok(queryCount <= 9, `Workspace refresh used ${queryCount} database round trips (budget: 9)`);
+    assert.equal(fresh.tasks[0].title, 'Updated title');
   });
   await t.test('the production sanitizer strips executable HTML and encoded protocols while retaining supported formatting', async () => {
     const original = (await snapshot()).tasks.find(t => t.id === 't1');

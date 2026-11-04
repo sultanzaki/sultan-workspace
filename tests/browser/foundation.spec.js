@@ -137,7 +137,9 @@ test('all workspace views use shared database content across accounts after clea
   await page.getByRole('button', { name: 'Login', exact: true }).click();
   const nav = page.getByRole('navigation', { name: 'Main', exact: true });
   await expect(nav).toBeVisible();
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
+  await expect(page.locator('.native-sync-status')).toBeHidden();
+  await expect(page.getByText('Tersimpan di database')).toHaveCount(0);
   await expect(page.getByText('Website Redesign')).toHaveCount(0);
   for (const route of [
     'overview',
@@ -173,10 +175,10 @@ test('all workspace views use shared database content across accounts after clea
   await page.locator('[data-id="__form"][data-field="due"]').click();
   await page.locator(`[data-a="popPick"][data-v="${today}"]`).first().click();
   await page.getByRole('button', { name: 'Create task', exact: true }).click();
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await drag(page, page.locator('[data-drag-card]').first(), page.locator('[data-drop-col="progress"]'));
   await expect(page.locator('[data-drop-col="progress"] [data-drag-card]')).toHaveCount(1);
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   let aborted = false;
   await page.route('**/content', route => {
     if (route.request().method() === 'POST' && !aborted) {
@@ -189,16 +191,16 @@ test('all workspace views use shared database content across accounts after clea
   await expect(page.locator('[data-drop-col="review"] [data-drag-card]')).toHaveCount(1);
   await expect(page.locator('.native-sync-status')).toContainText('Perubahan belum tersimpan');
   await page.getByRole('button', { name: 'Coba simpan lagi', exact: true }).click();
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await page.unroute('**/content');
   await page.locator('.content [data-tab="calendar"]').click();
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   const target = await page
     .locator('.cday:not(.out)[data-drop-day]')
     .evaluateAll((elements, today) => elements.map(el => el.dataset.dropDay).find(day => day !== today), today);
   await drag(page, page.locator('[data-drag-cal]').first(), page.locator(`[data-drop-day="${target}"]`));
   await expect(page.locator(`[data-drop-day="${target}"] [data-drag-cal]`)).toHaveCount(1);
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await page.screenshot({ path: 'test-results/restored-workspace.png' });
   for (const tab of ['board', 'list', 'table', 'calendar', 'timeline', 'files', 'overview', 'activity']) {
     await page.locator(`.content [data-a="go"][data-tab="${tab}"]`).first().click();
@@ -208,14 +210,14 @@ test('all workspace views use shared database content across accounts after clea
   await page.locator('th [data-f="title"]').click();
   await page.locator('td[data-f="estimate"]').click();
   await page.getByLabel('Estimate', { exact: true }).fill('5d');
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await expect(page.getByLabel('Estimate', { exact: true })).toHaveValue('5d');
   await page.getByLabel('Estimate', { exact: true }).press('Enter');
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await page.locator('td[data-f="title"]').click();
   await page.getByLabel('Title', { exact: true }).fill('Restored local task edited');
   await page.getByLabel('Title', { exact: true }).press('Enter');
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await page.locator('.content [data-tab="timeline"]').click();
   const bar = page.locator('[data-bar]').first();
   await bar.scrollIntoViewIfNeeded();
@@ -225,7 +227,7 @@ test('all workspace views use shared database content across accounts after clea
   await page.mouse.down();
   await page.mouse.move(barBox.x + barBox.width / 2 + dayWidth * 2, barBox.y + barBox.height / 2, { steps: 10 });
   await page.mouse.up();
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   const persisted = await page.evaluate(async () => {
     const identity = await (await fetch('/api/auth/me')).json();
     return (await (await fetch(`/api/workspaces/${identity.workspaces[0].id}/content`)).json()).tasks[0];
@@ -235,7 +237,7 @@ test('all workspace views use shared database content across accounts after clea
   const shifted = new Date(target + 'T00:00:00Z');
   shifted.setUTCDate(shifted.getUTCDate() + 2);
   expect(persisted.due).toBe(shifted.toISOString().slice(0, 10));
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(nav.getByText('Restored local project', { exact: true })).toBeVisible();
@@ -248,21 +250,44 @@ test('all workspace views use shared database content across accounts after clea
   await page.getByRole('heading', { name: 'Restored local project', exact: true }).click();
   await page.locator('.content [data-pop="sort"]').click();
   await page.locator('[data-a="setSort"][data-v="title"]').click();
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
+  let releaseSave,
+    saveReady,
+    heldSave = false;
+  const heldResponse = new Promise(resolve => (releaseSave = resolve));
+  const saving = new Promise(resolve => (saveReady = resolve));
+  page.once('close', releaseSave);
+  await page.route('**/content', async route => {
+    if (route.request().method() !== 'POST' || heldSave) return route.continue();
+    heldSave = true;
+    const response = await route.fetch();
+    saveReady();
+    await heldResponse;
+    await route.fulfill({ response });
+  });
   await page.locator('.content input[data-in="viewQ"]').fill('not-matching');
   await expect(page.locator('[data-drag-card]')).toHaveCount(0);
   await page.locator('.content input[data-in="viewQ"]').fill('Restored');
   await expect(page.locator('[data-drag-card]')).toHaveCount(1);
+  await saving;
   await page.locator('[data-a="saveView"]').click();
   await page.getByLabel('View name', { exact: true }).fill('Shared review view');
   await page.getByRole('button', { name: 'Layout', exact: true }).click();
+  releaseSave();
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
+  await expect(page.getByRole('option', { name: 'Table', exact: true })).toBeVisible();
+  await page.unroute('**/content');
   await page.getByRole('option', { name: 'Table', exact: true }).click();
+  await expect(page.getByLabel('View name', { exact: true })).toHaveValue('Shared review view');
+  await expect(page.getByRole('button', { name: 'Layout', exact: true })).toHaveText('Table');
   await page.locator('[data-a="saveViewSubmit"]').click();
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
+  await expect(page.locator('.content .tab').filter({ hasText: 'Shared review view' })).toBeVisible();
   await page.locator('.content').getByRole('button', { name: 'Members', exact: true }).click();
   await page.getByLabel('Proyek privat', { exact: true }).check();
   await page.locator('[data-in="nativeProjectMember"]:not(:disabled)').check();
   await page.getByRole('button', { name: 'Selesai', exact: true }).click();
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await page.locator('[data-a="nativeSignOut"]').click();
   await expect(page.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
   await page.getByLabel('Email', { exact: true }).fill('member@example.test');
@@ -290,7 +315,7 @@ test('comments, original files, notifications and recurring tasks work across tw
   await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
   await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
   await page.getByRole('button', { name: 'Login', exact: true }).click();
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   const fixture = await page.evaluate(async () => {
     const identity = await (await fetch('/api/auth/me')).json(),
       ws = identity.workspaces[0].id;
@@ -348,7 +373,7 @@ test('comments, original files, notifications and recurring tasks work across tw
   await drawer.locator(`[data-a="pickMention"][data-mid="${fixture.member}"]`).click();
   const original = `Please review @${fixture.memberName}`;
   await drawer.getByLabel('Comment', { exact: true }).fill(original);
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await drawer.getByRole('button', { name: 'Comment', exact: true }).click();
   await expect(drawer.locator('.cmt .txt')).toHaveText(original);
   await drawer.getByRole('button', { name: 'Edit comment', exact: true }).click();
@@ -428,9 +453,9 @@ test('comments, original files, notifications and recurring tasks work across tw
     await expect(drawer.getByRole('button', { name: '🎉 1', exact: true })).toBeVisible();
     await drawer.locator('[data-pop="recur"]').click();
     await page.locator('[data-a="popPick"][data-v="Monthly"]').click();
-    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
     await drawer.locator('[data-a="toggleDone"]').first().click();
-    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
     const tasks = await page.evaluate(
       async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).tasks.filter(t => t.project === 'browser-collab'),
       fixture.ws,
@@ -439,9 +464,9 @@ test('comments, original files, notifications and recurring tasks work across tw
     expect(tasks.find(t => t.status === 'todo').due).toBe('2037-02-28');
     expect(tasks.find(t => t.status === 'todo').attachments).toEqual([]);
     await drawer.locator('[data-a="toggleDone"]').first().click();
-    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
     await drawer.locator('[data-a="toggleDone"]').first().click();
-    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
     const count = await page.evaluate(
       async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).tasks.filter(t => t.project === 'browser-collab').length,
       fixture.ws,
@@ -504,7 +529,7 @@ test('native settings save accounts, teams, manual guest invitations, milestones
   await page.getByLabel('Zona waktu (IANA)', { exact: true }).fill('Asia/Jakarta');
   await page.getByLabel('Link meeting', { exact: true }).fill('https://meet.example.test/planning');
   await page.locator('.modal').getByRole('button', { name: 'Simpan', exact: true }).click();
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await expect(page.locator('.cal [data-pop="event"]').filter({ hasText: 'Database planning meeting' }).first()).toBeVisible();
   const saved = await page.evaluate(async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).events, fixture.ws);
   expect(saved.find(e => e.title === 'Database planning meeting').startsAt).toBe(day + 'T03:30:00.000Z');
@@ -566,12 +591,12 @@ test('native settings save accounts, teams, manual guest invitations, milestones
   await page.locator('#native-timezone').selectOption('Asia/Jakarta');
   await page.locator('#native-timeformat').selectOption('24');
   await page.locator('#native-dateformat').selectOption('d/M');
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await settings('language');
   await page.locator('#native-language').selectOption('id-ID');
   await expect(page.locator('html')).toHaveAttribute('lang', 'id');
   await expect(page.getByRole('navigation', { name: 'Main', exact: true }).getByText('Beranda', { exact: true })).toBeVisible();
-  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('lang', 'id');
   const reloaded = await page.evaluate(async ws => await (await fetch(`/api/workspaces/${ws}/content`)).json(), fixture.ws);
@@ -612,13 +637,13 @@ test('email preferences generate an actual queued email and unsubscribe confirms
     await expect(memberPage.getByRole('heading', { name: 'Email', exact: true })).toBeVisible();
     const mention = memberPage.getByRole('checkbox', { name: 'email_mention', exact: true });
     await mention.uncheck();
-    await expect(memberPage.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await expect(memberPage.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
     await mention.check();
-    await expect(memberPage.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await expect(memberPage.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
     await memberPage.getByRole('checkbox', { name: 'email_comment', exact: true }).uncheck();
     await memberPage.locator('.set-nav [data-sec="notif-mentions"]').click();
     await memberPage.getByRole('checkbox', { name: 'push_mention', exact: true }).uncheck();
-    await expect(memberPage.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await expect(memberPage.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
     const commentId = await page.evaluate(async fixture => {
       const me = await (await fetch('/api/auth/me')).json(),
         id = crypto.randomUUID();
