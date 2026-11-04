@@ -1,3 +1,4 @@
+import { resendWebhook, registerEmailRoutes } from './email-routes.js';
 import express from 'express';
 import helmet from 'helmet';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
@@ -5,7 +6,7 @@ import { z, ZodError } from 'zod';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transaction } from './db.js';
-import { queueMail } from './mail.js';
+import { queueMail, queueSecurityMail } from './mail.js';
 import { createMaintenance } from './maintenance.js';
 import { bootstrap } from './bootstrap.js';
 import { registerContent } from './content.js';
@@ -49,6 +50,7 @@ export async function createApp(pool, config) {
       referrerPolicy: { policy: 'no-referrer' },
     }),
   );
+  app.post('/api/webhooks/resend', express.raw({ type: 'application/json', limit: '128kb' }), resendWebhook(pool, config));
   app.use('/api', (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     res.set('Vary', 'Cookie');
@@ -137,7 +139,7 @@ export async function createApp(pool, config) {
     if (!config.CRON_SECRET || !timingSafeEqual(Buffer.from(digest(req.get('authorization') || '')), Buffer.from(digest(`Bearer ${config.CRON_SECRET}`)))) {
       fail(401, 'Akses tidak diizinkan.');
     }
-    res.json(await app.locals.maintain({ maxMessages: 1 }));
+    res.json(await app.locals.maintain({ maxMessages: 100 }));
   });
   app.get('/api/auth/me', authenticated, async (req, res) => {
     const { rows } = await pool.query(
@@ -258,6 +260,7 @@ export async function createApp(pool, config) {
       await db.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, rows[0].user_id]);
       await db.query('UPDATE password_resets SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL', [rows[0].user_id]);
       await db.query('DELETE FROM sessions WHERE user_id=$1', [rows[0].user_id]);
+      await queueSecurityMail(db, config, rows[0].user_id, 'Password akun telah direset. Seluruh sesi login lama dicabut.');
     });
     res.clearCookie(cookieName, cookieOptions).json({ message: 'Password diperbarui. Silakan login kembali.' });
   });
@@ -269,6 +272,7 @@ export async function createApp(pool, config) {
     clearSession: res => res.clearCookie(cookieName, cookieOptions),
   });
   app.locals.accountSecurity = accountSecurity;
+  registerEmailRoutes(app, pool, { authenticated });
   registerContent(app, pool, authenticated);
   registerCollaboration(app, pool, authenticated);
   app.use('/api/workspaces', authenticated);
@@ -284,7 +288,7 @@ export async function createApp(pool, config) {
   app.get('/api/workspaces/:ws/mail-status', async (req, res) => {
     await membership(pool, req.params.ws, req.session.user_id, ['owner', 'admin']);
     const { rows } = await pool.query(
-      `SELECT o.id,o.recipient,o.attempts,o.sent_at,o.created_at FROM mail_outbox o JOIN invitations i ON i.id=o.invitation_id WHERE i.workspace_id=$1 ORDER BY o.created_at DESC LIMIT 50`,
+      `SELECT o.id,o.recipient,o.kind,o.attempts,o.sent_at,o.created_at,o.delivery_status,o.error_code FROM mail_outbox o LEFT JOIN invitations i ON i.id=o.invitation_id WHERE coalesce(o.workspace_id,i.workspace_id)=$1 ORDER BY o.created_at DESC LIMIT 50`,
       [req.params.ws],
     );
     res.json(rows);

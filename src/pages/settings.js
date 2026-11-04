@@ -1,3 +1,4 @@
+import { EMAIL_DEFAULTS } from '../core/email-preferences.js';
 /* =====================================================================
    SETTINGS · AUTH · ONBOARDING · DESIGN SYSTEM · SYSTEM STATES
    ===================================================================== */
@@ -102,8 +103,58 @@ export function settingsBody(sec, title) {
     };
     return `<h1>Notifikasi dalam aplikasi</h1><p class="lead">Notifikasi pribadi muncul di Inbox dan Notifications. Pengaturan ini disimpan untuk akun Anda.</p>${keys.map(key => srow(labels[key], key === 'push_due' ? 'Sehari sebelum deadline, pada hari deadline, dan saat terlambat.' : '', tog(key, D().notifPrefs[key] !== false, 'np'))).join('')}`;
   }
-  if (getWorkspaceSession() && sec === 'notif-email')
-    return '<h1>Email</h1><p class="lead">Email ditunda. Mention, penugasan, komentar, dan pengingat tersedia melalui notifikasi dalam aplikasi.</p>';
+  if (getWorkspaceSession() && sec === 'notif-email') {
+    const session = getWorkspaceSession(),
+      manager = ['owner', 'admin'].includes(session.workspace.role);
+    const labels = {
+      email_mention: 'Mention',
+      email_assign: 'Penugasan task',
+      email_comment: 'Komentar percakapan',
+      email_status: 'Perubahan status task',
+      email_due: 'Pengingat deadline',
+      email_digest: 'Ringkasan harian',
+    };
+    const slot = new Date();
+    slot.setUTCHours(0, 15, 0, 0);
+    const clock = new Intl.DateTimeFormat('id-ID', { timeZone: S.prefs.tz || 'UTC', hour: '2-digit', minute: '2-digit', hour12: false }).format(slot);
+    const kinds = { invitation: 'Undangan', reset: 'Pemulihan akun', notification: 'Notifikasi', digest: 'Ringkasan harian', security: 'Keamanan akun' };
+    const errors = {
+      network_timeout: 'Layanan email belum merespons; akan dicoba kembali.',
+      rate_limited: 'Batas pengiriman provider tercapai.',
+      provider_auth: 'Kredensial layanan email perlu diperiksa.',
+      provider_unavailable: 'Layanan email sementara tidak tersedia.',
+      provider_rejected: 'Provider menolak pesan. Periksa pengirim dan alamat penerima.',
+      smtp_failed: 'Koneksi SMTP belum berhasil.',
+      expired: 'Batas waktu atau percobaan pengiriman tercapai.',
+      bounced: 'Alamat penerima ditolak oleh layanan email.',
+      complained: 'Penerima menandai email sebagai spam.',
+      failed: 'Pengiriman ditolak provider.',
+      delivery_failed: 'Pengiriman belum berhasil.',
+    };
+    const statuses = {
+      queued: 'Menunggu pengiriman',
+      accepted: 'Diterima layanan email',
+      delivered: 'Terkirim',
+      delayed: 'Tertunda',
+      failed: 'Gagal',
+      bounced: 'Alamat ditolak',
+      complained: 'Ditandai spam',
+      cancelled: 'Dibatalkan',
+    };
+    return `<h1>Email</h1><p class="lead">${session.features.email ? 'Pengiriman email telah diaktifkan.' : 'Admin belum mengaktifkan layanan email. Preferensi tetap dapat disimpan.'} Pengaturan ini terpisah dari notifikasi aplikasi.</p>${Object.entries(
+      EMAIL_DEFAULTS,
+    )
+      .map(([key, defaultValue]) =>
+        srow(
+          labels[key],
+          key === 'email_digest' ? `Aktivitas pada hari kerja, sekitar ${clock} (${esc(S.prefs.tz)}).` : '',
+          tog(key, D().notifPrefs[key] ?? defaultValue, 'np'),
+        ),
+      )
+      .join(
+        '',
+      )}<p class="faint">Undangan, reset password, dan pemberitahuan perubahan keamanan tetap tersedia terlepas dari pilihan notifikasi aktivitas.</p>${manager ? `<div class="sblock"><h2>Status pengiriman email</h2><button class="btn btn-secondary" data-a="nativeLoadMail">Muat status email</button><div class="stack" style="margin-top:12px">${(session.mailStatus || []).map(mail => `<div class="panel" style="padding:12px;overflow-wrap:anywhere"><div>${esc(mail.recipient)} · ${kinds[mail.kind] || 'Email'} · ${statuses[mail.delivery_status] || 'Menunggu'}</div>${mail.error_code ? `<p class="faint">${esc(errors[mail.error_code] || 'Pengiriman perlu diperiksa.')}</p>` : ''}${mail.delivery_status === 'queued' && mail.attempts ? `<button class="btn btn-sm" data-a="nativeRetryMail" data-id="${mail.id}">Coba pengiriman lagi</button>` : ''}</div>`).join('') || (session.mailLoaded ? '<p>Belum ada pengiriman.</p>' : '<p>Memuat status email…</p>')}</div></div>` : ''}`;
+  }
   if (
     getWorkspaceSession() &&
     [

@@ -166,6 +166,7 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
       if (input.delivery === 'email')
         await queueMail(db, {
           to: input.email,
+          workspaceId: req.params.ws,
           subject: 'Undangan bergabung ke workspace',
           body: `Anda diundang ke workspace. Buka tautan ini dalam 48 jam.\n${config.APP_ORIGIN}/#invite=${raw}`,
           invitationId: invitation,

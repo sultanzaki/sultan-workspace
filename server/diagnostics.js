@@ -20,6 +20,10 @@ export function initializationDiagnostic(error) {
   else if (code === 'ENOTFOUND') message = 'Alamat server database tidak ditemukan. Periksa hostname pada DATABASE_URL.';
   else if (code.startsWith('APP_ORIGIN'))
     message = 'Alamat website belum dikonfigurasi dengan benar. Isi APP_ORIGIN dengan https://sultan-workspace.vercel.app tanpa slash terakhir.';
+  else if (code === 'RESEND_KEY_REQUIRED') message = 'Email Resend belum lengkap. Admin perlu mengisi RESEND_API_KEY pada Vercel.';
+  else if (code === 'MAIL_FROM_REQUIRED')
+    message = 'Alamat pengirim email belum diatur. Isi MAIL_FROM dengan alamat pada domain yang sudah diverifikasi di Resend.';
+  else if (code === 'SMTP_HOST_REQUIRED') message = 'Pengiriman SMTP belum lengkap. Periksa SMTP_HOST atau gunakan konfigurasi Resend API.';
   else if (code === 'CONFIG_INVALID') message = 'Konfigurasi server belum lengkap atau tidak valid. Admin perlu memeriksa nama isian yang tercantum pada log.';
   // Only controlled categories and field names are returned/logged, never raw errors.
   const fields = Array.isArray(error.configFields) ? error.configFields.filter(field => typeof field === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(field)) : [];

@@ -336,7 +336,8 @@ session.onRender = () => {
   previousRender?.();
   applyTranslations();
 };
-if (!/^#(task|project|file)=/.test(location.hash) && ['home', 'mytasks', 'inbox'].includes(S.prefs.home)) S.ui.route = S.prefs.home;
+if (location.hash !== '#email-settings' && !/^#(task|project|file)=/.test(location.hash) && ['home', 'mytasks', 'inbox'].includes(S.prefs.home))
+  S.ui.route = S.prefs.home;
 for (const [action, key, collection] of [
   ['toggleFavProj', 'projects', 'projects'],
   ['toggleFavTask', 'tasks', 'tasks'],

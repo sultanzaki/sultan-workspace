@@ -580,3 +580,95 @@ test('native settings save accounts, teams, manual guest invitations, milestones
   expect(reloaded.directory.teams.some(t => t.name === 'Native team')).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test('email preferences generate an actual queued email and unsubscribe confirms without disabling account security', async ({ page, browser }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+  const fixture = await page.evaluate(async () => {
+    const identity = await (await fetch('/api/auth/me')).json(),
+      ws = identity.workspaces[0].id,
+      content = await (await fetch(`/api/workspaces/${ws}/content`)).json();
+    return {
+      ws,
+      member: content.directory.members.find(m => m.email === 'member@example.test').id,
+      memberName: content.directory.members.find(m => m.email === 'member@example.test').name,
+      task: content.tasks.find(t => t.project === 'browser-collab').id,
+    };
+  });
+  const context = await browser.newContext({ baseURL: 'http://localhost:5173' }),
+    memberPage = await context.newPage(),
+    pool = createPool(testConfig());
+  try {
+    await memberPage.goto('/');
+    await memberPage.getByLabel('Email', { exact: true }).fill('member@example.test');
+    await memberPage.getByLabel('Password', { exact: true }).fill('member-browser-password-123');
+    await memberPage.getByRole('button', { name: 'Login', exact: true }).click();
+    await expect(memberPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+    await memberPage.goto(`/?workspace=${fixture.ws}#email-settings`);
+    await expect(memberPage.getByRole('heading', { name: 'Email', exact: true })).toBeVisible();
+    const mention = memberPage.getByRole('checkbox', { name: 'email_mention', exact: true });
+    await mention.uncheck();
+    await expect(memberPage.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await mention.check();
+    await expect(memberPage.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await memberPage.getByRole('checkbox', { name: 'email_comment', exact: true }).uncheck();
+    await memberPage.locator('.set-nav [data-sec="notif-mentions"]').click();
+    await memberPage.getByRole('checkbox', { name: 'push_mention', exact: true }).uncheck();
+    await expect(memberPage.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    const commentId = await page.evaluate(async fixture => {
+      const me = await (await fetch('/api/auth/me')).json(),
+        id = crypto.randomUUID();
+      const r = await fetch(`/api/workspaces/${fixture.ws}/tasks/${fixture.task}/comments`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken },
+        body: JSON.stringify({ id, text: 'Email workflow proof <b>escaped text</b> @' + fixture.memberName, mentions: [fixture.member] }),
+      });
+      if (r.status !== 201) throw new Error('Comment failed');
+      return id;
+    }, fixture);
+    let mail;
+    await expect
+      .poll(
+        async () => {
+          mail = (
+            await pool.query(
+              "SELECT o.id,o.delivery_status FROM mail_outbox o JOIN email_events e ON o.dedupe_key='notification:'||e.id WHERE e.comment_id=$1 AND e.recipient_id=$2",
+              [commentId, fixture.member],
+            )
+          ).rows[0];
+          return mail?.delivery_status;
+        },
+        { timeout: 20000 },
+      )
+      .toBe('accepted');
+    const delivered = JSON.parse(await readFile(`.local/e2e-mail/${mail.id}.json`, 'utf8'));
+    expect(delivered.to).toBe('member@example.test');
+    expect(delivered.text).toContain('Email workflow proof');
+    expect(delivered.html).toContain('&lt;b&gt;escaped text&lt;/b&gt;');
+    expect((await pool.query('SELECT 1 FROM user_notifications WHERE comment_id=$1 AND recipient_id=$2', [commentId, fixture.member])).rowCount).toBe(0);
+    const token = delivered.text.match(/#unsubscribe=([a-f0-9]{64})/)[1],
+      unsubscribePage = await context.newPage();
+    await unsubscribePage.goto('/#unsubscribe=' + token);
+    await expect(unsubscribePage.getByRole('heading', { name: 'Pengaturan email aktivitas', exact: true })).toBeVisible();
+    expect(unsubscribePage.url()).not.toContain(token);
+    let prefs = (await pool.query('SELECT data FROM workspace_preferences WHERE workspace_id=$1 AND user_id=$2', [fixture.ws, fixture.member])).rows[0].data;
+    expect(prefs.notifPrefs.email_mention).toBe(true);
+    await unsubscribePage.getByRole('button', { name: 'Nonaktifkan email aktivitas', exact: true }).click();
+    await expect(unsubscribePage.getByRole('heading', { name: 'Email aktivitas dinonaktifkan', exact: true })).toBeVisible();
+    prefs = (await pool.query('SELECT data FROM workspace_preferences WHERE workspace_id=$1 AND user_id=$2', [fixture.ws, fixture.member])).rows[0].data;
+    expect(prefs.notifPrefs.email_mention).toBe(false);
+    expect(prefs.notifPrefs.email_digest).toBe(false);
+    expect(prefs.notifPrefs.push_mention).toBe(false);
+    await page.goto(`/?workspace=${fixture.ws}#email-settings`);
+    await page.getByRole('button', { name: 'Muat status email', exact: true }).click();
+    await expect(page.locator('.set-body')).toContainText('member@example.test');
+    expect(await page.locator('.set-body').textContent()).not.toContain(token);
+  } finally {
+    await pool.end();
+    await context.close();
+  }
+});

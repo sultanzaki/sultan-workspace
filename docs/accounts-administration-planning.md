@@ -28,7 +28,7 @@ Di **Settings → Members → Undang anggota**, isi email dan role, pilih **Link
 
 Link ditampilkan sekali, berlaku 48 jam, dan hanya bisa digunakan sekali. Penerima membuat password sendiri. Akun yang sudah ada harus login sebagai email penerima. Undangan yang belum digunakan bisa dibatalkan atau dibuatkan link baru; link lama langsung tidak berlaku. Daftar undangan tidak menyimpan token dalam respons API. Menerima undangan tidak menurunkan role anggota aktif.
 
-Jika Resend sudah siap, atur SMTP server sesuai [panduan fondasi](foundation.md): `MAIL_TRANSPORT=smtp`, `SMTP_HOST=smtp.resend.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`, `SMTP_USER=resend`, `SMTP_PASSWORD` berisi API key Resend, dan `MAIL_FROM` pada domain pengirim yang sudah diverifikasi. Redeploy. Pilihan kirim email tersedia setelah SMTP diaktifkan. Jangan kirim API key ke chat atau commit ke git.
+Resend API kini didukung langsung; ikuti [panduan email](email.md) untuk aktivasi yang disarankan. Alternatif SMTP tetap tersedia sesuai [panduan fondasi](foundation.md): `MAIL_TRANSPORT=smtp`, `SMTP_HOST=smtp.resend.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`, `SMTP_USER=resend`, `SMTP_PASSWORD` berisi API key Resend, dan `MAIL_FROM` pada domain pengirim yang sudah diverifikasi. Redeploy. Pilihan kirim email tersedia setelah layanan email diaktifkan. Jangan kirim API key ke chat atau commit ke git.
 
 ## Administrasi dan izin
 

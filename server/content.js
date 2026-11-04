@@ -184,6 +184,12 @@ function safePreferences(value) {
           .optional(),
         notifPrefs: z
           .object({
+            email_mention: z.boolean().optional(),
+            email_assign: z.boolean().optional(),
+            email_comment: z.boolean().optional(),
+            email_status: z.boolean().optional(),
+            email_due: z.boolean().optional(),
+            email_digest: z.boolean().optional(),
             push_mention: z.boolean().optional(),
             push_assign: z.boolean().optional(),
             push_comment: z.boolean().optional(),

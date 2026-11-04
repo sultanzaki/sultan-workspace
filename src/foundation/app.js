@@ -103,6 +103,11 @@ async function refresh(id) {
   await loadWorkspace(id);
 }
 function authContent() {
+  if (state.view === 'unsubscribe')
+    return `<h1>Pengaturan email aktivitas</h1><p>${state.unsubscribeWorkspace ? `Nonaktifkan email aktivitas untuk ${esc(state.unsubscribeWorkspace)}?` : 'Memuat pengaturan email…'}</p><p>Email keamanan akun dan undangan tetap tersedia.</p>${state.unsubscribeWorkspace ? `<form data-form="unsubscribe">${submit('Nonaktifkan email aktivitas')}</form>` : ''}<button class="btn btn-ghost" data-action="login-view">Ke login</button>`;
+  if (state.view === 'unsubscribed')
+    return '<h1>Email aktivitas dinonaktifkan</h1><p>Anda dapat mengaktifkannya kembali melalui Settings → Email setelah login.</p><button class="btn" data-action="login-view">Ke login</button>';
+
   if (state.view === 'mfa')
     return `<h1>Verifikasi dua langkah</h1><p class="sub">Masukkan kode authenticator atau satu recovery code. Recovery code hanya dapat dipakai sekali.</p><form data-form="mfa-login">${field('Kode 2FA atau recovery code', 'code', 'text', '', 'autocomplete="one-time-code" maxlength="64"')}${submit('Verifikasi dan login')}</form><button class="btn btn-ghost" data-action="login-view">Kembali ke login</button>`;
   if (state.view === 'setup') {
@@ -204,6 +209,12 @@ root.addEventListener('submit', event => {
     const base = `/workspaces/${state.workspace?.id}`;
     let notice = 'Perubahan disimpan.';
     switch (form.dataset.form) {
+      case 'unsubscribe':
+        await api('/email/unsubscribe', 'POST', { token: state.token });
+        state.token = '';
+        state.view = 'unsubscribed';
+        render();
+        return;
       case 'owner-setup':
         if (data.password !== data.confirmation) throw new Error('Konfirmasi password belum sesuai.');
         await api('/auth/setup', 'POST', {
@@ -351,9 +362,10 @@ async function boot() {
   state.token = '';
   state.view = 'login';
   state.setupAvailable = null;
+  state.unsubscribeWorkspace = null;
   const setup = location.hash === '#setup';
   if (setup) state.view = 'setup';
-  const hash = location.hash.slice(1).match(/^(invite|reset)=([a-f0-9]{64})$/);
+  const hash = location.hash.slice(1).match(/^(invite|reset|unsubscribe)=([a-f0-9]{64})$/);
   if (hash) {
     state.token = hash[2];
     state.view = hash[1];
@@ -361,12 +373,13 @@ async function boot() {
   }
   try {
     try {
-      await refresh();
+      if (hash?.[1] !== 'unsubscribe') await refresh();
     } catch (error) {
       if (error.status !== 401) throw error;
     }
     if (setup) state.setupAvailable = (await api('/auth/setup')).available;
     else if (hash?.[1] === 'invite') state.invite = await api('/auth/invitations/inspect', 'POST', { token: state.token });
+    else if (hash?.[1] === 'unsubscribe') state.unsubscribeWorkspace = (await api('/email/unsubscribe/inspect', 'POST', { token: state.token })).workspace;
     else if (!hash && state.user) state.view = 'workspace';
     render();
   } catch (error) {
@@ -376,6 +389,6 @@ async function boot() {
 }
 // Email links may be opened in an already-running tab without a document reload.
 window.addEventListener('hashchange', () => {
-  if (location.hash === '#setup' || /^#(invite|reset)=[a-f0-9]{64}$/.test(location.hash)) void boot();
+  if (location.hash === '#setup' || /^#(invite|reset|unsubscribe)=[a-f0-9]{64}$/.test(location.hash)) void boot();
 });
 void boot();

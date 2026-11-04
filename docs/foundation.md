@@ -105,7 +105,7 @@ File ini dihasilkan dari migrasi yang sama dengan CLI. Pengembang dapat membuat 
 6. Jalankan migrasi melalui SQL Editor di atas atau CLI privat. Buat akun owner melalui setup berkunci atau CLI. Migrasi tidak dijalankan pada build; pembuatan owner melalui web hanya aktif jika operator mengatur kunci setup.
 7. Redeploy setelah mengubah environment variables. Buka `/api/health`: hasil normal adalah `{"status":"ok"}`. Tanpa sesi login, `/api/auth/me` semestinya mengembalikan JSON 401, bukan halaman 404 Vercel. Bila migrasi belum dijalankan, API mengembalikan JSON 503 dengan instruksi migrasi. Log inisialisasi sekarang menyebut kode, tahap (`configuration`, `pool`, `database`, atau `application`), dan nama isian terkait; tidak mencetak nilai kredensial. Contoh: `DATABASE_TIMEOUT` berarti koneksi belum tercapai, sedangkan `APP_ORIGIN_INVALID` berarti format domain perlu diperbaiki.
 
-Endpoint `GET /api/internal/maintenance` memeriksa pengingat dan mengirim maksimal satu pesan email yang mengantre. Endpoint memerlukan `Authorization: Bearer <CRON_SECRET>`, dengan secret acak minimal 32 karakter. `vercel.json` menyediakan jadwal harian pukul 00:15 UTC untuk pengingat; aktifkan dengan `CRON_SECRET` di environment Production Vercel. Login, komentar, file, notifikasi langsung, dan pembuatan task berulang tidak memerlukan scheduler atau SMTP. Jika email kelak diaktifkan, cron harian tidak cukup untuk retry reset password yang berlaku 30 menit; gunakan scheduler lebih sering sebelum mengandalkan email operasional.
+Endpoint `GET /api/internal/maintenance` memeriksa pengingat dan memproses antrean email dengan jumlah dan waktu yang dibatasi untuk Function Vercel. Endpoint memerlukan `Authorization: Bearer <CRON_SECRET>`, dengan secret acak minimal 32 karakter. `vercel.json` menyediakan jadwal harian pukul 00:15 UTC untuk pengingat; aktifkan dengan `CRON_SECRET` di environment Production Vercel. Login, komentar, file, notifikasi langsung, dan pembuatan task berulang tidak memerlukan scheduler atau SMTP. Jika email diaktifkan, cron harian tidak cukup untuk retry reset password yang berlaku 30 menit; gunakan scheduler lebih sering sebelum mengandalkan email operasional.
 
 ## Autentikasi dan izin
 
@@ -170,4 +170,6 @@ Simpan teks lisensi MIT dan copyright notice asli dari pembuatnya saat tersedia,
 
 ## Tahap selanjutnya
 
-Fase 4–5 sudah mencakup komentar/mention, file asli, notifikasi, pengingat, task berulang, dan tautan langsung ke objek. Email tetap menunggu SMTP; MFA, billing, dan penyimpanan object storage untuk file yang lebih besar merupakan pengembangan terpisah.
+Fase 4–5 sudah mencakup komentar/mention, file asli, notifikasi, pengingat, task berulang, dan tautan langsung ke objek. Fase 6–8 mencakup MFA dan administrasi/perencanaan. Email melalui Resend tersedia sesuai [panduan email](email.md); billing dan object storage untuk file lebih besar tetap terpisah.
+
+Untuk email baru, gunakan [panduan Resend API](email.md). Dukungan SMTP di atas tetap berlaku sebagai alternatif.

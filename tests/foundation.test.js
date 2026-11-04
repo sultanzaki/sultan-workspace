@@ -264,6 +264,7 @@ test('native authentication and workspace authorization against PostgreSQL', asy
     member = await login('member@example.test', secondPassword);
   });
   await t.test('revoked pending mail is suppressed; transient delivery failures are retried', async () => {
+    await drain();
     const response = await request(`/workspaces/${first.workspaceId}/invitations`, { method: 'POST', actor: owner, body: { email: 'mail@example.test' } });
     assert.equal(response.status, 201);
     await deliverOne(pool, async () => {
@@ -279,7 +280,10 @@ test('native authentication and workspace authorization against PostgreSQL', asy
       delivered = true;
     });
     assert.equal(delivered, false);
-    assert.equal((await pool.query('SELECT 1 FROM mail_outbox WHERE invitation_id=$1', [response.data.id])).rowCount, 0);
+    assert.equal(
+      (await pool.query("SELECT 1 FROM mail_outbox WHERE invitation_id=$1 AND delivery_status='cancelled' AND body=''", [response.data.id])).rowCount,
+      1,
+    );
   });
   await t.test('expired sessions, logout and restarted application do not bypass authentication', async () => {
     await pool.query("UPDATE sessions SET expires_at=now()-interval '1 second' WHERE token_hash=$1", [digest(member.cookie.split('=')[1])]);
@@ -322,6 +326,7 @@ test('native authentication and workspace authorization against PostgreSQL', asy
       APP_ORIGIN: 'https://workspace.example.test',
       MAIL_TRANSPORT: 'smtp',
       SMTP_HOST: 'smtp.example.test',
+      MAIL_FROM: 'sender@example.test',
     });
     const productionApp = await createApp(pool, production);
     const listener = productionApp.listen(0, '127.0.0.1');
@@ -358,6 +363,7 @@ test('production configuration refuses insecure origins and development mail', (
         APP_ORIGIN: 'http://localhost:5173',
         MAIL_TRANSPORT: 'smtp',
         SMTP_HOST: 'smtp.example.test',
+        MAIL_FROM: 'sender@example.test',
       }),
     /HTTPS/,
   );

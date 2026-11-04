@@ -8,7 +8,7 @@ Fitur ini memakai login native, backend Node.js, dan schema `app_private` pada P
 2. Merge PR dan gunakan deployment Vercel seperti biasa. `DATABASE_URL` dan `DATABASE_CA_PEM` yang sudah bekerja tetap dipakai. Tidak ada kredensial storage baru.
 3. Untuk pengingat harian saat tidak ada pengunjung, set `CRON_SECRET` acak minimal 32 karakter pada environment **Production** Vercel, lalu redeploy. Vercel mengirim secret sebagai bearer token pada cron yang tercantum di `vercel.json`: **00:15 UTC setiap hari**. Jangan menaruh secret pada URL atau variabel `VITE_*`.
 
-Komentar, upload/download, notifikasi saat ada aktivitas, dan task berulang tetap bekerja tanpa cron. Pengingat diperiksa saat workspace dibuka, maksimal sekali per menit per workspace. Cron diperlukan untuk pemeriksaan harian tanpa pengunjung. Di server Node biasa, maintenance berjalan dari timer proses. Email tetap ditunda; tidak perlu SMTP untuk fase ini.
+Komentar, upload/download, notifikasi saat ada aktivitas, dan task berulang tetap bekerja tanpa cron. Pengingat diperiksa saat workspace dibuka, maksimal sekali per menit per workspace. Cron diperlukan untuk pemeriksaan harian tanpa pengunjung. Di server Node biasa, maintenance berjalan dari timer proses. Notifikasi dalam aplikasi tetap bekerja tanpa email. Pengiriman email aktivitas tersedia melalui [integrasi Resend](email.md).
 
 ## Komentar dan mention
 
