@@ -56,7 +56,7 @@ export function pageMembers() {
 }
 export function permsTable() {
   if (getWorkspaceSession())
-    return '<div class="panel panel-b"><p>Owner mengelola owner/admin. Admin mengelola anggota biasa dan tim. Member dapat melihat workspace. Hak akses diperiksa oleh server.</p><button class="btn btn-secondary" data-a="nativeManage">Kelola workspace</button></div>';
+    return '<div class="panel panel-b"><p>Owners manage owners and administrators. Administrators manage members and teams. Members can view the workspace. Permissions are enforced by the server.</p><button class="btn btn-secondary" data-a="nativeManage">Manage workspace</button></div>';
   const rows = [
     ['View projects & tasks', 1, 1, 1, 1],
     ['Comment on tasks', 1, 1, 1, 1],

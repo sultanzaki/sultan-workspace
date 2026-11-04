@@ -65,7 +65,7 @@ function sniff(bytes) {
 async function reserve(db, ws, user, mutation, hash) {
   const old = (await db.query('SELECT digest FROM content_mutations WHERE workspace_id=$1 AND user_id=$2 AND id=$3', [ws, user, mutation])).rows[0];
   if (old) {
-    if (old.digest !== hash) fail(409, 'ID permintaan sudah digunakan untuk data lain.');
+    if (old.digest !== hash) fail(409, 'This request ID has already been used for different data.');
     return true;
   }
   await db.query('INSERT INTO content_mutations(workspace_id,user_id,id,digest) VALUES ($1,$2,$3,$4)', [ws, user, mutation, hash]);
@@ -75,7 +75,7 @@ async function mentionsFor(db, ws, project, input) {
   const people = (await db.query('SELECT u.id,u.name,m.role FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.workspace_id=$1 AND m.active', [ws]))
     .rows;
   const allowed = people.filter(p => canReadProject(project, p.id, p.role));
-  if (input.mentions.some(id => !allowed.some(person => person.id === id))) fail(400, 'Mention harus anggota aktif yang dapat mengakses proyek ini.');
+  if (input.mentions.some(id => !allowed.some(person => person.id === id))) fail(400, 'Mentions must refer to active members with access to this project.');
   const typed = allowed.filter(person => input.text.includes('@' + person.name) && allowed.filter(p => p.name === person.name).length === 1).map(p => p.id);
   const selected = input.mentions.filter(id => allowed.some(person => person.id === id && input.text.includes('@' + person.name)));
   return [...new Set([...selected, ...typed])].sort();
@@ -133,8 +133,7 @@ export async function taskResourcesMoved(db, ws, task, project) {
 }
 async function quota(db, ws, extra) {
   const total = (await db.query('SELECT count(*)::integer n,coalesce(sum(bytes),0)::bigint bytes FROM project_files WHERE workspace_id=$1', [ws])).rows[0];
-  if (total.n >= 500 || Number(total.bytes) + extra > 100 * 1024 * 1024)
-    fail(413, 'Kuota file workspace penuh (100 MB atau 500 file). Hapus file yang tidak diperlukan.');
+  if (total.n >= 500 || Number(total.bytes) + extra > 100 * 1024 * 1024) fail(413, 'Workspace storage is full (100 MB or 500 files). Delete unused files.');
 }
 export function registerCollaboration(app, pool, authenticated) {
   const base = '/api/workspaces/:ws';
@@ -164,7 +163,7 @@ export function registerCollaboration(app, pool, authenticated) {
       const previous = await reserve(db, ws, user, input.id, digest('comment:' + req.params.task + JSON.stringify(input)));
       if (previous) {
         const old = (await db.query('SELECT * FROM task_comments WHERE id=$1 AND workspace_id=$2', [input.id, ws])).rows[0];
-        if (!old) fail(410, 'Komentar ini sudah dihapus.');
+        if (!old) fail(410, 'This comment has been deleted.');
         return old;
       }
       const mentions = await mentionsFor(db, ws, project, input);
@@ -190,7 +189,7 @@ export function registerCollaboration(app, pool, authenticated) {
       user = req.session.user_id;
     await membership(db, ws, user, ['owner', 'admin', 'member', 'guest'], true);
     const comment = (await db.query('SELECT * FROM task_comments WHERE id=$1 AND workspace_id=$2 FOR UPDATE', [uuid.parse(req.params.comment), ws])).rows[0];
-    if (!comment) fail(404, 'Komentar tidak ditemukan.');
+    if (!comment) fail(404, 'Comment not found.');
     const access = await contentAccess(db, ws, user, { task: comment.task_id, lock: false, action: 'comment' });
     return { comment, ...access };
   }
@@ -198,11 +197,11 @@ export function registerCollaboration(app, pool, authenticated) {
     const input = commentInput.extend({ version: z.number().int().positive() }).strict().parse(req.body);
     const result = await transaction(pool, async db => {
       const { comment, project } = await accessComment(db, req);
-      if (comment.author_id !== req.session.user_id) fail(403, 'Hanya penulis yang dapat mengedit komentar.');
+      if (comment.author_id !== req.session.user_id) fail(403, 'Only the author can edit this comment.');
       const mentions = await mentionsFor(db, req.params.ws, project, input);
       if (comment.version !== input.version) {
         if (comment.body === input.text && JSON.stringify(comment.mentions) === JSON.stringify(mentions)) return comment;
-        fail(409, 'Komentar sudah berubah. Muat data terbaru.');
+        fail(409, 'This comment has changed. Refresh the data.');
       }
       const row = (
         await db.query('UPDATE task_comments SET body=$1,mentions=$2,edited_at=now(),version=version+1 WHERE id=$3 RETURNING *', [
@@ -233,7 +232,7 @@ export function registerCollaboration(app, pool, authenticated) {
   app.delete(base + '/comments/:comment', authenticated, async (req, res) => {
     await transaction(pool, async db => {
       const { comment, project, role } = await accessComment(db, req);
-      if (comment.author_id !== req.session.user_id && !['owner', 'admin'].includes(role)) fail(403, 'Anda tidak dapat menghapus komentar ini.');
+      if (comment.author_id !== req.session.user_id && !['owner', 'admin'].includes(role)) fail(403, 'You cannot delete this comment.');
       await db.query('DELETE FROM task_comments WHERE id=$1', [comment.id]);
       await activity(db, req.params.ws, req.session.user_id, project.id, comment.task_id, 'deleted a comment on');
     });
@@ -253,21 +252,21 @@ export function registerCollaboration(app, pool, authenticated) {
     res.json(commentMetadata(result));
   });
   app.post(base + '/files', authenticated, async (req, res) => {
-    if (typeof req.body?.content === 'string' && req.body.content.length > 4194304) fail(413, 'Ukuran file maksimal 3 MB.');
+    if (typeof req.body?.content === 'string' && req.body.content.length > 4194304) fail(413, 'Files must not exceed 3 MB.');
     const input = z
       .object({ id: uuid, project: id, task: id.nullable().default(null), name: filename, content: z.string().min(4).max(4194304) })
       .strict()
       .parse(req.body);
     const bytes = Buffer.from(input.content, 'base64');
-    if (bytes.toString('base64') !== input.content) fail(400, 'Isi file tidak valid.');
-    if (!bytes.length || bytes.length > MAX_FILE_BYTES) fail(413, 'Ukuran file maksimal 3 MB.');
+    if (bytes.toString('base64') !== input.content) fail(400, 'Invalid file content.');
+    if (!bytes.length || bytes.length > MAX_FILE_BYTES) fail(413, 'Files must not exceed 3 MB.');
     await limit(pool, `uploads:${req.session.user_id}`, 30, 60);
     const row = await transaction(pool, async db => {
       const { project } = await contentAccess(db, req.params.ws, req.session.user_id, { project: input.project, task: input.task, action: 'write' });
       const previous = await reserve(db, req.params.ws, req.session.user_id, input.id, digest('file:' + JSON.stringify(input)));
       if (previous) {
         const old = (await db.query(`SELECT ${FILE_COLUMNS} FROM project_files WHERE id=$1 AND workspace_id=$2`, [input.id, req.params.ws])).rows[0];
-        if (!old) fail(410, 'File ini sudah dihapus.');
+        if (!old) fail(410, 'This file has been deleted.');
         return old;
       }
       await quota(db, req.params.ws, bytes.length);
@@ -290,7 +289,7 @@ export function registerCollaboration(app, pool, authenticated) {
         uuid.parse(req.params.file),
       ])
     ).rows[0];
-    if (!file) fail(404, 'File tidak ditemukan.');
+    if (!file) fail(404, 'File not found.');
     const access = await contentAccess(db, req.params.ws, req.session.user_id, { project: file.project_id, task: file.task_id, lock: false, action });
     return { file, ...access };
   }
@@ -298,7 +297,7 @@ export function registerCollaboration(app, pool, authenticated) {
     app.get(base + `/files/:file/${action}`, authenticated, async (req, res) => {
       const { file } = await transaction(pool, db => accessFile(db, req, true, false, 'read'));
       if (action === 'preview' && !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.mime))
-        fail(415, 'Pratinjau tersedia untuk PNG, JPEG, GIF, dan WebP. Unduh file untuk membukanya.');
+        fail(415, 'Previews are available for PNG, JPEG, GIF, and WebP. Download the file to open it.');
       res.set('Content-Type', file.mime);
       res.set('X-Content-Type-Options', 'nosniff');
       res.set('Content-Length', String(file.bytes));
@@ -326,7 +325,7 @@ export function registerCollaboration(app, pool, authenticated) {
       const { file } = await accessFile(db, req, true);
       if (await reserve(db, req.params.ws, req.session.user_id, id, digest('copy:' + file.id))) {
         const old = (await db.query(`SELECT ${FILE_COLUMNS} FROM project_files WHERE id=$1 AND workspace_id=$2`, [id, req.params.ws])).rows[0];
-        if (!old) fail(410, 'Salinan sudah dihapus.');
+        if (!old) fail(410, 'This copy has been deleted.');
         return old;
       }
       await quota(db, req.params.ws, file.bytes);

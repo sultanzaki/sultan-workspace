@@ -30,10 +30,10 @@ export const eventSchema = z.object({
   updated: z.number().optional(),
 });
 export function normalizeEvent(value, before, user) {
-  if (!DateTime.now().setZone(value.timezone).isValid) fail(400, 'Zona waktu event tidak valid.');
+  if (!DateTime.now().setZone(value.timezone).isValid) fail(400, 'Invalid event time zone.');
   const time = value.allDay ? '00:00' : value.time;
   let date = DateTime.fromISO(`${value.date}T${time}`, { zone: value.timezone });
-  if (!date.isValid || date.toFormat('yyyy-MM-dd HH:mm') !== `${value.date} ${time}`) fail(400, 'Tanggal atau jam event tidak valid di zona waktu ini.');
+  if (!date.isValid || date.toFormat('yyyy-MM-dd HH:mm') !== `${value.date} ${time}`) fail(400, 'Invalid event date or time in this time zone.');
   if (!value.allDay && before?.date === value.date && before.time === time && before.timezone === value.timezone && before.startsAt)
     date = DateTime.fromISO(before.startsAt, { zone: value.timezone });
   else if (!value.allDay) date = date.getPossibleOffsets().sort((a, b) => a.toMillis() - b.toMillis())[0];

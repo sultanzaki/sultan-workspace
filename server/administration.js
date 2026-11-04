@@ -38,7 +38,7 @@ export async function bumpRevision(db, ws) {
 export async function acceptProjectInvitation(db, invite, user, previous) {
   if (!invite.project_id) return;
   const project = (await db.query('SELECT data FROM projects WHERE workspace_id=$1 AND id=$2', [invite.workspace_id, invite.project_id])).rows[0]?.data;
-  if (!project) fail(400, 'Proyek undangan sudah tidak tersedia.');
+  if (!project) fail(400, 'The invited project is no longer available.');
   const rank = { viewer: 1, commenter: 2, editor: 3, manager: 4 },
     level = previous?.active ? projectPermission(project, user.id, previous.role) : null;
   project.members = [...new Set([...project.members, user.id])];
@@ -96,7 +96,7 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
     await transaction(pool, async db => {
       await membership(db, req.params.ws, req.session.user_id, ['owner'], true);
       const workspace = (await db.query('SELECT name FROM workspaces WHERE id=$1', [req.params.ws])).rows[0];
-      if (workspace.name !== input.name) fail(400, 'Nama konfirmasi workspace tidak sesuai.');
+      if (workspace.name !== input.name) fail(400, 'The workspace confirmation name does not match.');
       await reauthenticate(db, req, input, true);
       await db.query('DELETE FROM workspaces WHERE id=$1', [req.params.ws]);
     });
@@ -125,8 +125,8 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
       .strict()
       .parse(req.body);
     if (input.delivery === 'email' && config.MAIL_TRANSPORT === 'disabled')
-      fail(503, 'Pengiriman email belum diaktifkan. Gunakan undangan lewat link atau atur SMTP.');
-    if (input.role === 'guest' && !input.project) fail(400, 'Guest harus diundang ke satu proyek dengan izin yang dipilih.');
+      fail(503, 'Email delivery is disabled. Use an invitation link or configure an email provider.');
+    if (input.role === 'guest' && !input.project) fail(400, 'Guests must be invited to a project with a specific permission.');
     await limit(pool, `invite:${req.session.user_id}`, 30, 3600);
     const invitation = randomUUID(),
       raw = token();
@@ -135,16 +135,16 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
       if (!['owner', 'admin'].includes(ownRole)) {
         const policy = (await db.query('SELECT settings FROM workspaces WHERE id=$1', [req.params.ws])).rows[0].settings;
         if (ownRole !== 'member' || input.role !== 'guest' || !policy.leadCanInviteGuests)
-          fail(403, 'Hanya owner/admin atau lead proyek yang diizinkan dapat mengundang.');
+          fail(403, 'Only owners, administrators, and authorized project leads can send invitations.');
         await contentAccess(db, req.params.ws, req.session.user_id, { project: input.project, lock: false, action: 'manage' });
       }
-      if (ownRole !== 'owner' && input.role === 'admin') fail(403, 'Hanya owner yang dapat mengundang admin.');
+      if (ownRole !== 'owner' && input.role === 'admin') fail(403, 'Only an owner can invite administrators.');
       if (input.project) await contentAccess(db, req.params.ws, req.session.user_id, { project: input.project, lock: false, action: 'manage' });
       const active = await db.query('SELECT 1 FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND u.email=$2 AND m.active', [
         req.params.ws,
         input.email,
       ]);
-      if (active.rowCount) fail(409, 'Pengguna sudah menjadi anggota aktif. Atur akses proyek melalui Share.');
+      if (active.rowCount) fail(409, 'This user is already an active member. Manage project access through Share.');
       await db.query('UPDATE invitations SET revoked_at=now() WHERE workspace_id=$1 AND email=$2 AND consumed_at IS NULL AND revoked_at IS NULL', [
         req.params.ws,
         input.email,
@@ -167,15 +167,15 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
         await queueMail(db, {
           to: input.email,
           workspaceId: req.params.ws,
-          subject: 'Undangan bergabung ke workspace',
-          body: `Anda diundang ke workspace. Buka tautan ini dalam 48 jam.\n${config.APP_ORIGIN}/#invite=${raw}`,
+          subject: 'Workspace invitation',
+          body: `You have been invited to a workspace. Open this link within 48 hours.\n${config.APP_ORIGIN}/#invite=${raw}`,
           invitationId: invitation,
         });
       await audit(db, req.params.ws, req.session.user_id, 'invitation.created', invitation);
     });
     res.status(201).json({
       id: invitation,
-      message: input.delivery === 'link' ? 'Link undangan dibuat. Link ini hanya ditampilkan sekali.' : 'Undangan masuk antrean pengiriman email.',
+      message: input.delivery === 'link' ? 'Invitation link created. This link is shown only once.' : 'Invitation queued for email delivery.',
       ...(input.delivery === 'link' ? { url: `${config.APP_ORIGIN}/#invite=${raw}` } : {}),
     });
   });
@@ -183,8 +183,8 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
     await transaction(pool, async db => {
       const ownRole = await membership(db, req.params.ws, req.session.user_id, ['owner', 'admin'], true);
       const invite = (await db.query('SELECT role FROM invitations WHERE id=$1 AND workspace_id=$2', [uuid.parse(req.params.id), req.params.ws])).rows[0];
-      if (!invite) fail(404, 'Undangan tidak ditemukan.');
-      if (ownRole !== 'owner' && invite.role === 'admin') fail(403, 'Hanya owner yang dapat mengelola undangan admin.');
+      if (!invite) fail(404, 'Invitation not found.');
+      if (ownRole !== 'owner' && invite.role === 'admin') fail(403, 'Only an owner can manage administrator invitations.');
       await db.query('UPDATE invitations SET revoked_at=now() WHERE id=$1', [req.params.id]);
       await audit(db, req.params.ws, req.session.user_id, 'invitation.revoked', req.params.id);
     });
@@ -200,9 +200,9 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
       const ownRole = await membership(db, req.params.ws, req.session.user_id, ['owner', 'admin'], true);
       const target = (await db.query('SELECT role,active FROM memberships WHERE workspace_id=$1 AND user_id=$2', [req.params.ws, uuid.parse(req.params.user)]))
         .rows[0];
-      if (!target) fail(404, 'Anggota tidak ditemukan.');
+      if (!target) fail(404, 'Member not found.');
       if (ownRole !== 'owner' && (!['member', 'guest'].includes(target.role) || (input.role && !['member', 'guest'].includes(input.role))))
-        fail(403, 'Hanya owner yang dapat mengelola role owner/admin.');
+        fail(403, 'Only an owner can manage owner and administrator roles.');
       const next = { ...target, ...input };
       if (target.role === 'owner' && target.active && (!next.active || next.role !== 'owner')) {
         const count = (
@@ -211,7 +211,7 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
             req.params.user,
           ])
         ).rows[0].n;
-        if (!count) fail(409, 'Workspace harus memiliki minimal satu owner aktif.');
+        if (!count) fail(409, 'The workspace must have at least one active owner.');
       }
       await db.query('UPDATE memberships SET role=$1,active=$2 WHERE workspace_id=$3 AND user_id=$4', [next.role, next.active, req.params.ws, req.params.user]);
       if (!next.active) await db.query('DELETE FROM sessions WHERE user_id=$1', [req.params.user]);
@@ -226,7 +226,7 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
     const rows = (
       await db.query("SELECT user_id FROM memberships WHERE workspace_id=$1 AND active AND role<>'guest' AND user_id=ANY($2::uuid[])", [ws, members])
     ).rows;
-    if (rows.length !== members.length) fail(400, 'Tim hanya boleh berisi anggota aktif internal workspace ini.');
+    if (rows.length !== members.length) fail(400, 'Teams can only contain active internal members of this workspace.');
   }
   app.post(base + '/:ws/teams', async (req, res) => {
     const input = z
@@ -234,7 +234,7 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
         .strict()
         .parse(req.body),
       team = randomUUID();
-    if (new Set(input.members).size !== input.members.length) fail(400, 'Anggota tim tidak boleh ganda.');
+    if (new Set(input.members).size !== input.members.length) fail(400, 'Team members must be unique.');
     await transaction(pool, async db => {
       await membership(db, req.params.ws, req.session.user_id, ['owner', 'admin'], true);
       await validateTeamMembers(db, req.params.ws, input.members);
@@ -258,7 +258,7 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
     await transaction(pool, async db => {
       await membership(db, req.params.ws, req.session.user_id, ['owner', 'admin'], true);
       if (!(await db.query('SELECT 1 FROM teams WHERE workspace_id=$1 AND id=$2', [req.params.ws, uuid.parse(req.params.id)])).rowCount)
-        fail(404, 'Tim tidak ditemukan.');
+        fail(404, 'Team not found.');
       await validateTeamMembers(db, req.params.ws, input.members);
       await db.query('DELETE FROM team_members WHERE team_id=$1', [req.params.id]);
       await db.query('INSERT INTO team_members(workspace_id,team_id,user_id) SELECT $1,$2,unnest($3::uuid[])', [req.params.ws, req.params.id, input.members]);
@@ -278,9 +278,9 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
         !(await db.query('UPDATE teams SET name=$1 WHERE workspace_id=$2 AND id=$3 RETURNING id', [input.name, req.params.ws, uuid.parse(req.params.id)]))
           .rowCount
       )
-        fail(404, 'Tim tidak ditemukan.');
+        fail(404, 'Team not found.');
       if (input.members) {
-        if (new Set(input.members).size !== input.members.length) fail(400, 'Anggota tim tidak boleh ganda.');
+        if (new Set(input.members).size !== input.members.length) fail(400, 'Team members must be unique.');
         await validateTeamMembers(db, req.params.ws, input.members);
         await db.query('DELETE FROM team_members WHERE team_id=$1', [req.params.id]);
         await db.query('INSERT INTO team_members(workspace_id,team_id,user_id) SELECT $1,$2,unnest($3::uuid[])', [req.params.ws, req.params.id, input.members]);
@@ -294,7 +294,7 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
     await transaction(pool, async db => {
       await membership(db, req.params.ws, req.session.user_id, ['owner', 'admin'], true);
       if (!(await db.query('DELETE FROM teams WHERE workspace_id=$1 AND id=$2 RETURNING id', [req.params.ws, uuid.parse(req.params.id)])).rowCount)
-        fail(404, 'Tim tidak ditemukan.');
+        fail(404, 'Team not found.');
       await db.query("UPDATE projects SET data=jsonb_set(data,'{team}','\"\"'::jsonb) WHERE workspace_id=$1 AND data->>'team'=$2", [
         req.params.ws,
         req.params.id,
@@ -337,10 +337,9 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
     const row = await transaction(pool, async db => {
       const role = await membership(db, req.params.ws, req.session.user_id, undefined, true),
         project = (await db.query('SELECT data FROM projects WHERE workspace_id=$1 AND id=$2', [req.params.ws, input.project])).rows[0]?.data;
-      if (!project || (role === 'guest' && !projectAllows(project, req.session.user_id, role, 'read')))
-        fail(404, 'Proyek tidak ditemukan atau tidak dapat diakses.');
+      if (!project || (role === 'guest' && !projectAllows(project, req.session.user_id, role, 'read'))) fail(404, 'Project not found or access denied.');
       const ranks = { viewer: 1, commenter: 2, editor: 3, manager: 4 };
-      if ((ranks[projectPermission(project, req.session.user_id, role)] || 0) >= ranks[input.permission]) fail(409, 'Anda sudah memiliki tingkat akses ini.');
+      if ((ranks[projectPermission(project, req.session.user_id, role)] || 0) >= ranks[input.permission]) fail(409, 'You already have this level of access.');
       return (
         await db.query(
           `INSERT INTO project_access_requests(id,workspace_id,project_id,user_id,permission,reason) VALUES ($1,$2,$3,$4,$5,$6)
@@ -358,12 +357,12 @@ export function registerAdministration(app, pool, config, { reauthenticate }) {
       const request = (
         await db.query('SELECT * FROM project_access_requests WHERE workspace_id=$1 AND id=$2 FOR UPDATE', [req.params.ws, uuid.parse(req.params.id)])
       ).rows[0];
-      if (!request) fail(404, 'Permintaan tidak ditemukan.');
+      if (!request) fail(404, 'Request not found.');
       const { project } = await contentAccess(db, req.params.ws, req.session.user_id, { project: request.project_id, action: 'manage', lock: false });
-      if (request.status !== 'pending') fail(409, 'Permintaan sudah diproses.');
+      if (request.status !== 'pending') fail(409, 'This request has already been processed.');
       if (input.approve) {
         if (!(await db.query('SELECT 1 FROM memberships WHERE workspace_id=$1 AND user_id=$2 AND active', [req.params.ws, request.user_id])).rowCount)
-          fail(400, 'Pemohon sudah tidak aktif.');
+          fail(400, 'The requester is no longer active.');
         project.members = [...new Set([...project.members, request.user_id])];
         project.permissions = { ...project.permissions, [request.user_id]: input.permission || request.permission };
         await db.query('UPDATE projects SET data=$1 WHERE workspace_id=$2 AND id=$3', [project, req.params.ws, project.id]);

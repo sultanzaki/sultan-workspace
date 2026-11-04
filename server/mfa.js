@@ -43,7 +43,7 @@ export function totp(secret, counter, digits = 6) {
 export const newSecret = () => base32(randomBytes(20));
 function key(config) {
   const bytes = config.AUTH_ENCRYPTION_KEY ? Buffer.from(config.AUTH_ENCRYPTION_KEY, 'base64') : null;
-  if (bytes?.length !== 32) fail(503, 'Admin perlu memasang AUTH_ENCRYPTION_KEY untuk mengaktifkan 2FA.');
+  if (bytes?.length !== 32) fail(503, 'Configure AUTH_ENCRYPTION_KEY to enable two-factor authentication.');
   return bytes;
 }
 export function encryptSecret(secret, config, user) {
@@ -61,7 +61,7 @@ export function decryptSecret(value, config, user) {
   try {
     return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
   } catch {
-    fail(503, 'Kunci keamanan 2FA tidak cocok. Hubungi admin; jangan mengganti AUTH_ENCRYPTION_KEY yang sudah dipakai.');
+    fail(503, 'The two-factor encryption key does not match. Contact an administrator; do not replace the existing AUTH_ENCRYPTION_KEY.');
   }
 }
 export async function verifyFactor(db, user, input, config, now = Date.now()) {

@@ -22,7 +22,7 @@ export function initPlanning({ session, sync }) {
       date = document.getElementById('milestone-date').value;
     if (!writable(p)) return;
     if (!name || !date) {
-      toast('Isi nama dan tanggal milestone.', { kind: 'err' });
+      toast('Enter a milestone name and date.', { kind: 'err' });
       return;
     }
     const milestone = { id: m.id || uid('ms'), name, date, done: document.getElementById('milestone-done').checked };
@@ -36,9 +36,9 @@ export function initPlanning({ session, sync }) {
     const p = proj(el.dataset.project),
       index = Number(el.dataset.index);
     confirmDlg({
-      title: 'Hapus milestone?',
-      body: 'Task dalam proyek tetap disimpan.',
-      ok: 'Hapus',
+      title: 'Delete milestone?',
+      body: 'Tasks in this project will be kept.',
+      ok: 'Delete',
       danger: true,
       run: () => {
         if (writable(p)) {
@@ -52,7 +52,7 @@ export function initPlanning({ session, sync }) {
   A.nativeNewEvent = el => {
     const project = el?.dataset.project || S.ui.params.id || S.data.projects.find(writable)?.id;
     if (!writable(proj(project))) {
-      toast('Pilih proyek dengan izin edit untuk membuat event.', { kind: 'info' });
+      toast('Choose a project you can edit to create an event.', { kind: 'info' });
       return;
     }
     openModal({
@@ -109,16 +109,16 @@ export function initPlanning({ session, sync }) {
   A.nativeSaveEvent = () => {
     const f = read();
     if (!f.title || !f.date || !f.time || !f.timezone || f.duration < 5 || f.duration > 1440) {
-      toast('Lengkapi judul, jadwal, zona waktu, dan durasi event.', { kind: 'err' });
+      toast('Enter the event title, schedule, time zone, and duration.', { kind: 'err' });
       return;
     }
     const local = DateTime.fromISO(f.date + 'T' + (f.allDay ? '00:00' : f.time), { zone: f.timezone });
     if (!local.isValid || local.toFormat('yyyy-MM-dd HH:mm') !== f.date + ' ' + (f.allDay ? '00:00' : f.time)) {
-      toast('Jadwal tidak valid di zona waktu ini.', { kind: 'err' });
+      toast('This schedule is invalid in the selected time zone.', { kind: 'err' });
       return;
     }
     if (f.link && !/^https?:\/\//.test(f.link)) {
-      toast('Link meeting harus dimulai dengan https:// atau http://.', { kind: 'err' });
+      toast('Meeting links must start with https:// or http://.', { kind: 'err' });
       return;
     }
     if (!writable(proj(f.project))) return;
@@ -133,9 +133,9 @@ export function initPlanning({ session, sync }) {
     const event = S.data.events.find(e => e.id === el.dataset.id);
     if (!event) return;
     confirmDlg({
-      title: 'Hapus event?',
+      title: 'Delete event?',
       body: event.title,
-      ok: 'Hapus',
+      ok: 'Delete',
       danger: true,
       run: () => {
         if (writable(proj(event.project))) {

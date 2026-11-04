@@ -53,7 +53,7 @@ export function drawerHtml(t) {
       <button class="btn btn-sm ${t.status === 'done' ? 'btn-secondary' : 'btn-ghost'}" data-a="toggleDone" data-id="${t.id}" style="${t.status === 'done' ? 'color:var(--green)' : ''}">${ic(t.status === 'done' ? 'circle-check' : 'circle', 14)}<span class="hide-m">${t.status === 'done' ? 'Completed' : 'Mark complete'}</span></button>
       <button class="ibtn ibtn-sm" data-a="toggleFavTask" data-id="${t.id}" data-tip="${t.fav ? 'Unfavorite' : 'Favorite'}" aria-pressed="${t.fav}" aria-label="Favorite" style="${t.fav ? 'color:var(--amber)' : ''}">${ic('star', 15)}</button>
       <button class="ibtn ibtn-sm" data-a="copyLink" data-id="${t.id}" data-tip="Copy link" aria-label="Copy link">${ic('link', 15)}</button>
-      ${getWorkspaceSession() ? `<button class="ibtn ibtn-sm" data-a="nativeRefresh" aria-label="Muat data terbaru" data-tip="Muat data terbaru">${ic('refresh-cw', 15)}</button>` : ''}
+      ${getWorkspaceSession() ? `<button class="ibtn ibtn-sm" data-a="nativeRefresh" aria-label="Refresh data" data-tip="Refresh data">${ic('refresh-cw', 15)}</button>` : ''}
       <button class="ibtn ibtn-sm hide-m" data-a="toggleDrawerFull" data-tip="${u.drawerFull ? 'Side panel' : 'Full page'}" aria-label="Toggle full page">${ic(u.drawerFull ? 'minimize-2' : 'maximize-2', 15)}</button>
       <button class="ibtn ibtn-sm" data-a="ctxBtn" data-ctx="task" data-id="${t.id}" aria-label="More">${ic('ellipsis', 15)}</button>
       <button class="ibtn ibtn-sm" data-a="closeDrawer" data-tip="Close  Esc" aria-label="Close">${ic('x', 16)}</button>
@@ -115,7 +115,7 @@ export function drawerHtml(t) {
         ${
           tab === 'comments'
             ? `
-          ${S.ui.commentPages?.[t.id]?.nextCursor || (D().commentTotals?.[t.id] || 0) > cs.length ? `<button class="btn btn-sm btn-secondary" data-a="nativeMoreComments" data-id="${t.id}">Muat komentar sebelumnya</button>` : ''}
+          ${S.ui.commentPages?.[t.id]?.nextCursor || (D().commentTotals?.[t.id] || 0) > cs.length ? `<button class="btn btn-sm btn-secondary" data-a="nativeMoreComments" data-id="${t.id}">Load earlier comments</button>` : ''}
           ${cs.length ? cs.map(commentHtml).join('') : `<p class="faint" style="font-size:13px;margin:10px 0">No comments yet. Start the conversation.</p>`}
           <div class="row" style="align-items:flex-start;gap:10px;margin-top:8px">${av(D().me, 'md', false)}<div class="grow" style="position:relative">
             <div class="cbox"><textarea id="d-cmt" data-in="draft" data-id="${t.id}" data-key-mod-enter="postComment" placeholder="Leave a comment… type @ to mention" aria-label="Comment" rows="2" data-autosize>${esc(u.drafts[t.id] || '')}</textarea>

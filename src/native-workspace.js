@@ -1,4 +1,5 @@
 import { applyTranslations } from './core/translations.js';
+import { translate } from './core/locale.js';
 import './demo.js';
 import { getWorkspaceSession } from './core/workspace-session.js';
 import { A, IN } from './actions/actions.js';
@@ -81,7 +82,7 @@ const sync = createContentSync({
         }),
       );
     } catch (error) {
-      if (error instanceof TypeError && !error.status) throw new Error('Koneksi terputus. Perubahan belum tersimpan. Coba simpan lagi.');
+      if (error instanceof TypeError && !error.status) throw new Error('Connection lost. Your changes have not been saved. Try saving again.');
       throw error;
     }
   },
@@ -124,7 +125,8 @@ const sync = createContentSync({
     if (['error', 'conflict'].includes(state) || ['error', 'conflict'].includes(previous)) renderSynced();
     const element = document.querySelector('.native-sync-status');
     if (element) {
-      element.textContent = syncStatusText(state, message);
+      element.textContent = translate(syncStatusText(state, message), S.prefs.lang);
+      element.closest('.native-workspace-notice').hidden = !element.textContent && !session.hasLocalDraft && !session.draftBackup;
       element.hidden = !element.textContent;
       element.dataset.state = state;
     }
@@ -155,7 +157,7 @@ A.nativeImportLocal = () => {
   if (
     !localDraft ||
     !window.confirm(
-      'Impor proyek dan task lokal akun ini ke database bersama? Data database yang sudah ada tidak akan ditimpa. File dan komentar tidak ikut diimpor.',
+      "Import this account's local projects and tasks into the shared workspace? Existing records will be preserved. Files and comments are excluded.",
     )
   )
     return;
@@ -210,7 +212,7 @@ window.addEventListener('beforeunload', event => {
   }
 });
 const management = () => location.assign(`/?manage=1&workspace=${encodeURIComponent(session.workspace.id)}`);
-const unavailable = () => toast('Fitur ini belum terhubung ke layanan akun. Gunakan Kelola workspace untuk pengaturan anggota.', { kind: 'info' });
+const unavailable = () => toast('Manage members in workspace settings.', { kind: 'info' });
 A.nativeManage = management;
 A.share = el => openModal({ type: 'share', id: el.dataset.id });
 IN.nativeProjectPrivate = el => {
@@ -228,7 +230,7 @@ IN.nativeProjectMember = el => {
 const newTask = A.newTask;
 A.newTask = el => {
   if (!visibleProjects().length) {
-    toast('Buat proyek terlebih dahulu untuk menambahkan task.', { kind: 'info' });
+    toast('Create a project before adding a task.', { kind: 'info' });
     A.newProject();
     return;
   }
@@ -241,7 +243,7 @@ A.popPick = el => {
   if (S.ui.pop?.type === 'recur' && el.dataset.v !== 'Does not repeat') {
     const target = S.ui.pop.id === '__form' ? S.ui.form : task(S.ui.pop.id);
     if (!target?.due) {
-      toast('Tentukan deadline dahulu untuk task berulang.', { kind: 'info' });
+      toast('Set a due date before making this task recurring.', { kind: 'info' });
       return;
     }
   }
@@ -293,7 +295,7 @@ IN.shareAccess = unavailable;
 A.signOut = async () => {
   try {
     if (session.collabPending) {
-      toast('Tunggu sampai komentar atau upload selesai.', { kind: 'info' });
+      toast('Wait for comments and uploads to finish.', { kind: 'info' });
       return;
     }
     await sync.flush();
@@ -306,7 +308,7 @@ A.signOut = async () => {
     if (response.status !== 401) await readApiResponse(response);
     location.assign('/');
   } catch {
-    toast('Logout belum berhasil. Periksa koneksi dan coba lagi.', { kind: 'err' });
+    toast('Could not sign out. Check your connection and try again.', { kind: 'err' });
   }
 };
 A.nativeSignOut = A.signOut;

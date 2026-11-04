@@ -81,7 +81,7 @@ export function calendarHtml(ts, opt = {}) {
       <button class="btn btn-secondary btn-sm" data-a="calNav" data-d="0">Today</button>
       <div class="row" style="gap:0"><button class="ibtn ibtn-sm" data-a="calNav" data-d="-1" aria-label="Previous">${ic('chevron-left', 16)}</button><button class="ibtn ibtn-sm" data-a="calNav" data-d="1" aria-label="Next">${ic('chevron-right', 16)}</button></div>
       <h2 style="font-size:15px;font-weight:600;margin:0 4px;letter-spacing:-.01em" aria-live="polite">${label}</h2>
-      <span class="sp"></span><button class="btn btn-secondary btn-sm" data-a="nativeNewEvent" ${opt.project ? `data-project="${opt.project}"` : ''}>Buat event</button>
+      <span class="sp"></span><button class="btn btn-secondary btn-sm" data-a="nativeNewEvent" ${opt.project ? `data-project="${opt.project}"` : ''}>Create event</button>
       ${
         !opt.project && projs.length > 1
           ? `<span class="row hide-m" style="gap:10px;font-size:11.5px;color:var(--text-2);margin-right:8px">${projs

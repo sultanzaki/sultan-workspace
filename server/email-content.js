@@ -5,7 +5,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 export const workspaceLink = (config, ws, task) =>
   `${config.APP_ORIGIN}/?workspace=${encodeURIComponent(ws)}${task ? '#task=' + encodeURIComponent(task) : ''}`;
 export function emailLayout({ heading, paragraphs = [], items = [], action, footer = '' }) {
-  return `<!doctype html><html lang="id"><body style="margin:0;background:#f5f5f7;color:#242430;font-family:Arial,sans-serif"><main style="max-width:600px;margin:24px auto;background:#fff;padding:28px;border-radius:12px"><p style="color:#4b5bd6;font-weight:bold">Gr8r Studio</p><h1 style="font-size:22px">${esc(heading)}</h1>${paragraphs.map(p => `<p style="line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere">${esc(p)}</p>`).join('')}${items.map(i => `<section style="border-top:1px solid #ddd;padding:16px 0"><h2 style="font-size:16px"><a href="${esc(i.url)}">${esc(i.title)}</a></h2><p>${esc(i.detail)}</p>${i.snippet ? `<blockquote style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(i.snippet)}</blockquote>` : ''}</section>`).join('')}${action ? `<p><a href="${esc(action.url)}" style="display:inline-block;background:#4b5bd6;color:#fff;padding:12px 18px;border-radius:6px;text-decoration:none">${esc(action.label)}</a></p>` : ''}<footer style="margin-top:24px;font-size:12px;color:#666">${footer}</footer></main></body></html>`;
+  return `<!doctype html><html lang="en"><body style="margin:0;background:#f5f5f7;color:#242430;font-family:Arial,sans-serif"><main style="max-width:600px;margin:24px auto;background:#fff;padding:28px;border-radius:12px"><p style="color:#4b5bd6;font-weight:bold">Gr8r Studio</p><h1 style="font-size:22px">${esc(heading)}</h1>${paragraphs.map(p => `<p style="line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere">${esc(p)}</p>`).join('')}${items.map(i => `<section style="border-top:1px solid #ddd;padding:16px 0"><h2 style="font-size:16px"><a href="${esc(i.url)}">${esc(i.title)}</a></h2><p>${esc(i.detail)}</p>${i.snippet ? `<blockquote style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(i.snippet)}</blockquote>` : ''}</section>`).join('')}${action ? `<p><a href="${esc(action.url)}" style="display:inline-block;background:#4b5bd6;color:#fff;padding:12px 18px;border-radius:6px;text-decoration:none">${esc(action.label)}</a></p>` : ''}<footer style="margin-top:24px;font-size:12px;color:#666">${footer}</footer></main></body></html>`;
 }
 export async function activityContext(db, mail) {
   const person = (
@@ -63,17 +63,17 @@ export async function renderQueuedEmail(db, mail, config) {
     if (!context) return null;
     const { person, events } = context;
     const labels = {
-      mention: 'Mention untuk Anda',
-      assign: 'Penugasan task',
-      comment: 'Komentar baru',
-      status: 'Perubahan status task',
-      due: 'Pengingat deadline',
+      mention: 'Mentions of you',
+      assign: 'Task assignments',
+      comment: 'New comments',
+      status: 'Task status changes',
+      due: 'Due date reminders',
     };
-    const subject = mail.kind === 'digest' ? `Ringkasan harian · ${person.workspace}` : `${labels[events[0].category]} · ${events[0].task.title}`;
+    const subject = mail.kind === 'digest' ? `Daily digest · ${person.workspace}` : `${labels[events[0].category]} · ${events[0].task.title}`;
     const items = events.map(e => ({
       title: e.task.title,
       url: workspaceLink(config, mail.workspace_id, e.task_id),
-      detail: `${e.project.name} · ${e.actor || 'Otomatis'} · ${e.category === 'due' ? e.message : labels[e.category]}`,
+      detail: `${e.project.name} · ${e.actor || 'Automated'} · ${e.category === 'due' ? e.message : labels[e.category]}`,
       snippet: e.comment_body ?? e.snippet,
     }));
     const raw = token();
@@ -83,12 +83,10 @@ export async function renderQueuedEmail(db, mail, config) {
       mail.user_id,
     ]);
     const unsubscribe = `${config.APP_ORIGIN}/#unsubscribe=${raw}`,
-      action = { url: workspaceLink(config, mail.workspace_id), label: 'Buka workspace' };
+      action = { url: workspaceLink(config, mail.workspace_id), label: 'Open workspace' };
     const paragraphs = [
-      `Halo ${person.name},`,
-      mail.kind === 'digest'
-        ? `Ringkasan aktivitas terbaru di ${person.workspace} (maksimal 50 aktivitas).`
-        : `Ada pembaruan untuk Anda di ${person.workspace}.`,
+      `Hello ${person.name},`,
+      mail.kind === 'digest' ? `Recent activity in ${person.workspace} (up to 50 activities).` : `You have updates in ${person.workspace}.`,
     ];
     return {
       recipient: person.email,
@@ -96,15 +94,15 @@ export async function renderQueuedEmail(db, mail, config) {
       body: [
         ...paragraphs,
         ...items.map(i => `${i.title}\n${i.detail}\n${i.snippet}\n${i.url}`),
-        `Pengaturan email: ${config.APP_ORIGIN}/?workspace=${mail.workspace_id}#email-settings`,
-        `Berhenti menerima email aktivitas workspace ini: ${unsubscribe}`,
+        `Email settings: ${config.APP_ORIGIN}/?workspace=${mail.workspace_id}#email-settings`,
+        `Unsubscribe from activity emails for this workspace: ${unsubscribe}`,
       ].join('\n\n'),
       html: emailLayout({
         heading: subject,
         paragraphs,
         items,
         action,
-        footer: `Email aktivitas ${esc(person.workspace)}. <a href="${esc(unsubscribe)}">Berhenti berlangganan</a>. Email keamanan dan undangan tetap tersedia.`,
+        footer: `Activity email ${esc(person.workspace)}. <a href="${esc(unsubscribe)}">Unsubscribe</a>. Security emails and invitations remain enabled.`,
       }),
       headers: { 'List-Unsubscribe': `<${unsubscribe}>` },
       context: { ...mail.context, events: events.map(e => e.id) },
@@ -121,9 +119,9 @@ export async function renderQueuedEmail(db, mail, config) {
       heading: mail.subject,
       paragraphs: [mail.body],
       action: url?.startsWith(config.APP_ORIGIN + '/')
-        ? { url, label: mail.kind === 'reset' ? 'Ganti password' : mail.kind === 'invitation' ? 'Terima undangan' : 'Buka akun' }
+        ? { url, label: mail.kind === 'reset' ? 'Change password' : mail.kind === 'invitation' ? 'Accept invitation' : 'Open account' }
         : null,
-      footer: 'Pesan otomatis akun Gr8r Studio. Jangan membagikan link reset password atau link undangan kepada orang lain.',
+      footer: 'Automated Gr8r Studio account message. Do not share password reset links or invitation links with others.',
     }),
   };
 }

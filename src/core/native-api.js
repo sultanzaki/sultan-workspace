@@ -11,7 +11,7 @@ export async function nativeApi(session, path, method = 'GET', body) {
       }),
     );
   } catch (error) {
-    if (error instanceof TypeError) throw new Error('Koneksi terputus. Perubahan belum dikonfirmasi. Coba lagi.');
+    if (error instanceof TypeError) throw new Error('Connection lost. Your changes have not been confirmed. Try again.');
     throw error;
   }
 }
@@ -27,6 +27,6 @@ export const fileBase64 = file =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result).split(',')[1]);
-    reader.onerror = () => reject(new Error('File gagal dibaca.'));
+    reader.onerror = () => reject(new Error('Could not read the file.'));
     reader.readAsDataURL(file);
   });

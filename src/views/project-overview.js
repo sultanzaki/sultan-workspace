@@ -41,11 +41,11 @@ export function projOverview(p) {
           <dt>${ic('flag', 14)}Due</dt><dd><span class="pillbtn num">${fmtDate(p.due, true)}</span></dd>
           <dt>${ic('user-plus', 14)}Members</dt><dd><button class="pillbtn" data-a="share" data-id="${p.id}">${avStack(p.members, 6)}<span class="faint">${p.members.length}</span></button></dd>
         </dl></div></section>
-        <section class="panel"><div class="panel-h"><h2>Milestones</h2><button class="btn btn-sm btn-secondary" data-a="nativeNewMilestone" data-project="${p.id}">Tambah milestone</button></div><div class="panel-b">${
+        <section class="panel"><div class="panel-h"><h2>Milestones</h2><button class="btn btn-sm btn-secondary" data-a="nativeNewMilestone" data-project="${p.id}">Add milestone</button></div><div class="panel-b">${
           (p.milestones || [])
             .map((m, index) => {
               const n = diffD(parse(m.date), TODAY);
-              return `<div class="row" style="height:32px;font-size:13px"><span style="width:9px;height:9px;transform:rotate(45deg);border-radius:2px;flex-shrink:0;margin:0 3px;background:${m.done ? 'var(--green)' : n < 0 ? 'var(--red)' : pColor(p)}"></span><span class="grow trunc ${m.done ? 'faint' : ''}">${esc(m.name)}</span><span class="num muted">${fmtDate(m.date)}</span><button class="ibtn" data-a="nativeEditMilestone" data-project="${p.id}" data-index="${index}" aria-label="Edit milestone">${ic('pencil', 12)}</button><button class="ibtn" data-a="nativeDeleteMilestone" data-project="${p.id}" data-index="${index}" aria-label="Hapus milestone">${ic('trash-2', 12)}</button></div>`;
+              return `<div class="row" style="height:32px;font-size:13px"><span style="width:9px;height:9px;transform:rotate(45deg);border-radius:2px;flex-shrink:0;margin:0 3px;background:${m.done ? 'var(--green)' : n < 0 ? 'var(--red)' : pColor(p)}"></span><span class="grow trunc ${m.done ? 'faint' : ''}">${esc(m.name)}</span><span class="num muted">${fmtDate(m.date)}</span><button class="ibtn" data-a="nativeEditMilestone" data-project="${p.id}" data-index="${index}" aria-label="Edit milestone">${ic('pencil', 12)}</button><button class="ibtn" data-a="nativeDeleteMilestone" data-project="${p.id}" data-index="${index}" aria-label="Delete milestone">${ic('trash-2', 12)}</button></div>`;
             })
             .join('') || '<span class="faint">No milestones yet</span>'
         }</div></section>

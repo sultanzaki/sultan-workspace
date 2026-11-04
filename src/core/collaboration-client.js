@@ -36,7 +36,7 @@ export function initCollaboration({ session, sync, renderSynced }) {
         }),
       );
     } catch (error) {
-      if (error instanceof TypeError) throw new Error('Koneksi terputus. Perubahan belum dikonfirmasi server. Coba lagi.');
+      if (error instanceof TypeError) throw new Error('Connection lost. The server has not confirmed your changes. Try again.');
       throw error;
     }
   }
@@ -197,9 +197,9 @@ export function initCollaboration({ session, sync, renderSynced }) {
     const comment = S.data.comments.find(item => item.id === el.dataset.id);
     if (!comment) return;
     confirmDlg({
-      title: 'Hapus komentar?',
-      body: 'Komentar ini akan dihapus dari percakapan bersama.',
-      ok: 'Hapus komentar',
+      title: 'Delete comment?',
+      body: 'This comment will be deleted from the shared conversation.',
+      ok: 'Delete comment',
       danger: true,
       run: () =>
         perform(async () => {
@@ -221,7 +221,7 @@ export function initCollaboration({ session, sync, renderSynced }) {
     new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result).split(',')[1]);
-      reader.onerror = () => reject(new Error('File tidak dapat dibaca.'));
+      reader.onerror = () => reject(new Error('Could not read the file.'));
       reader.readAsDataURL(file);
     });
   function upload(entry) {
@@ -259,7 +259,7 @@ export function initCollaboration({ session, sync, renderSynced }) {
     const pending = [];
     for (const file of files || []) {
       if (file.size > 3 * 1024 * 1024 || !file.size) {
-        toast(`${file.name}: ukuran file harus 1 B sampai 3 MB.`, { kind: 'err' });
+        toast(`${file.name}: file size must be between 1 B and 3 MB.`, { kind: 'err' });
         continue;
       }
       const entry = { id: crypto.randomUUID(), name: file.name, project: ctx.project, task: ctx.task || null, file };
@@ -284,13 +284,13 @@ export function initCollaboration({ session, sync, renderSynced }) {
   IN.formFiles = el => {
     for (const file of el.files || [])
       if (file.size && file.size <= 3 * 1024 * 1024) S.ui.form.files.push({ name: file.name, size: fsize(file.size), type: fileType(file.name), file });
-      else toast(`${file.name}: maksimal 3 MB per file.`, { kind: 'err' });
+      else toast(`${file.name}: files must not exceed 3 MB.`, { kind: 'err' });
     render();
   };
   const submitTask = A.submitTask;
   A.submitTask = () => {
     if (S.ui.form.recur && !S.ui.form.due) {
-      toast('Tentukan deadline dahulu untuk task berulang.', { kind: 'info' });
+      toast('Set a due date before making this task recurring.', { kind: 'info' });
       return;
     }
     const modal = S.ui.modals.at(-1),
@@ -313,9 +313,9 @@ export function initCollaboration({ session, sync, renderSynced }) {
   };
   const removeFile = file =>
     confirmDlg({
-      title: 'Hapus file?',
-      body: 'File asli akan dihapus dari proyek dan lampiran task.',
-      ok: 'Hapus file',
+      title: 'Delete file?',
+      body: 'The original file will be deleted from the project and task attachments.',
+      ok: 'Delete file',
       danger: true,
       run: () =>
         perform(async () => {
@@ -367,7 +367,7 @@ export function initCollaboration({ session, sync, renderSynced }) {
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      toast(error.message || 'File gagal diunduh.', { kind: 'err' });
+      toast(error.message || 'Could not download the file.', { kind: 'err' });
     }
   }
   function read(ids, all = false, value = true) {
@@ -420,7 +420,7 @@ export function initCollaboration({ session, sync, renderSynced }) {
     else if (kind === 'project' && proj(id)) go('project', { id, tab: 'board' });
     else if (kind === 'project') queueMicrotask(() => session.requestProjectAccess?.(id));
     else if (kind === 'file' && S.data.files.some(file => file.id === id)) A.previewFile({ dataset: { id } });
-    else toast('Item tidak ditemukan atau Anda tidak memiliki akses.', { kind: 'err' });
+    else toast('Item not found or access denied.', { kind: 'err' });
   }
   window.addEventListener('hashchange', followLink);
   followLink();

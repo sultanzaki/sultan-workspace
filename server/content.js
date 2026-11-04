@@ -15,7 +15,7 @@ function parse(schema, value) {
   if (!result.success)
     fail(
       400,
-      'Data proyek/task tidak valid: ' +
+      'Invalid project or task data: ' +
         result.error.issues
           .slice(0, 4)
           .map(issue => issue.path.join('.') || 'payload')
@@ -162,11 +162,11 @@ const batch = z
 const canRead = canReadProject;
 
 function safePreferences(value) {
-  if (JSON.stringify(value).length > 131072) fail(400, 'Pengaturan tampilan terlalu besar.');
+  if (JSON.stringify(value).length > 131072) fail(400, 'Display settings are too large.');
   const walk = item => {
     if (item && typeof item === 'object')
       for (const [key, child] of Object.entries(item)) {
-        if (['__proto__', 'constructor', 'prototype'].includes(key)) fail(400, 'Pengaturan tidak valid.');
+        if (['__proto__', 'constructor', 'prototype'].includes(key)) fail(400, 'Invalid settings.');
         walk(child);
       }
   };
@@ -266,12 +266,12 @@ export function registerContent(app, pool, authenticated) {
         )
       ).rows[0];
       if (current.digest) {
-        if (current.digest !== hash) fail(409, 'ID perubahan sudah dipakai. Muat ulang data.');
+        if (current.digest !== hash) fail(409, 'This mutation ID has already been used. Refresh the data.');
         return snapshot(db, ws, user, role);
       }
       if (input.operations.length && current.revision !== input.revision)
-        fail(409, 'Data telah diubah anggota lain. Muat data terbaru sebelum melanjutkan; perubahan Anda belum disimpan.');
-      if (new Set(input.operations.map(op => op.entity + ':' + op.id)).size !== input.operations.length) fail(400, 'Perubahan ganda tidak valid.');
+        fail(409, 'Another member changed this data. Refresh before continuing; your changes have not been saved.');
+      if (new Set(input.operations.map(op => op.entity + ':' + op.id)).size !== input.operations.length) fail(400, 'Duplicate changes are not allowed.');
       if (input.operations.length) {
         const context = (
           await db.query(
@@ -287,8 +287,8 @@ export function registerContent(app, pool, authenticated) {
         const projects = new Map(context.projects.map(project => [project.id, project]));
         const checkProject = (pid, action = 'read') => {
           const p = projects.get(pid);
-          if (!canRead(p, user, role)) fail(404, 'Proyek tidak ditemukan atau tidak dapat diakses.');
-          if (!projectAllows(p, user, role, action)) fail(403, 'Anda tidak memiliki izin untuk mengubah konten proyek ini.');
+          if (!canRead(p, user, role)) fail(404, 'Project not found or access denied.');
+          if (!projectAllows(p, user, role, action)) fail(403, 'You do not have permission to edit this project.');
           return p;
         };
         const manager = project => projectAllows(project, user, role, 'manage');
@@ -303,7 +303,7 @@ export function registerContent(app, pool, authenticated) {
           if (op.value === null) {
             if (!existing) continue;
             const project = checkProject(op.entity === 'project' ? op.id : existing.project, 'write');
-            if (op.entity === 'project' && !manager(project)) fail(403, 'Hanya pemilik proyek atau admin yang dapat menghapus proyek.');
+            if (op.entity === 'project' && !manager(project)) fail(403, 'Only the project owner or an administrator can delete projects.');
             await db.query(`DELETE FROM ${table} WHERE workspace_id=$1 AND id=$2`, [ws, op.id]);
             await db.query('INSERT INTO content_activity(id,workspace_id,actor_id,project_id,task_id,verb) VALUES ($1,$2,$3,$4,$5,$6)', [
               randomUUID(),
@@ -317,14 +317,14 @@ export function registerContent(app, pool, authenticated) {
             continue;
           }
           let value = parse(schemas[op.entity], op.value);
-          if (value.id !== op.id) fail(400, 'ID perubahan tidak cocok.');
+          if (value.id !== op.id) fail(400, 'Mutation ID does not match.');
           let project;
           if (op.entity === 'project') {
             value.permissions ??= existing?.permissions || {};
             if (existing) {
               checkProject(op.id, 'write');
               if (Boolean(value.archived) !== Boolean(existing.archived) && !manager(existing))
-                fail(403, 'Hanya pemilik proyek atau admin yang dapat mengarsipkan proyek.');
+                fail(403, 'Only the project owner or an administrator can archive projects.');
               if (
                 !manager(existing) &&
                 (value.lead !== existing.lead ||
@@ -334,24 +334,25 @@ export function registerContent(app, pool, authenticated) {
                   ) ||
                   Boolean(value.private) !== Boolean(existing.private))
               )
-                fail(403, 'Hanya pemilik proyek atau admin yang dapat mengubah akses proyek.');
+                fail(403, 'Only the project owner or an administrator can change project access.');
             } else {
               const policy = (await db.query('SELECT settings FROM workspaces WHERE id=$1', [ws])).rows[0].settings;
               if (role === 'guest' || (role === 'member' && policy.membersCanCreateProjects === false))
-                fail(403, 'Anda tidak diizinkan membuat proyek di workspace ini.');
+                fail(403, 'You cannot create projects in this workspace.');
               value.lead ||= user;
               value.members = [...new Set([...value.members, user, value.lead])];
             }
-            if (Object.keys(value.permissions).some(id => !value.members.includes(id))) fail(400, 'Izin proyek hanya boleh diberikan kepada anggota proyek.');
-            if (value.lead && activeRoles.get(value.lead) === 'guest') fail(400, 'Lead proyek harus anggota internal.');
-            if (new Set(value.milestones.map(m => m.id)).size !== value.milestones.length) fail(400, 'ID milestone harus unik.');
+            if (Object.keys(value.permissions).some(id => !value.members.includes(id)))
+              fail(400, 'Project permissions can only be assigned to project members.');
+            if (value.lead && activeRoles.get(value.lead) === 'guest') fail(400, 'Project leads must be internal members.');
+            if (new Set(value.milestones.map(m => m.id)).size !== value.milestones.length) fail(400, 'Milestone IDs must be unique.');
             if (
               value.members.some(id => !active.includes(id) && !existing?.members.includes(id)) ||
               (value.lead && value.lead !== existing?.lead && !active.includes(value.lead)) ||
               (value.team && !teams.includes(value.team))
             )
-              fail(400, 'Anggota dan tim proyek harus berasal dari workspace yang sama.');
-            if (value.start && value.due && value.start > value.due) fail(400, 'Tanggal mulai harus sebelum deadline.');
+              fail(400, 'Project members and teams must belong to the same workspace.');
+            if (value.start && value.due && value.start > value.due) fail(400, 'The start date must be before the due date.');
             value.last = Date.now();
             await db.query('INSERT INTO projects(workspace_id,id,data) VALUES ($1,$2,$3) ON CONFLICT(workspace_id,id) DO UPDATE SET data=EXCLUDED.data', [
               ws,
@@ -368,16 +369,16 @@ export function registerContent(app, pool, authenticated) {
                 (value.assignee && value.assignee !== existing?.assignee && !active.includes(value.assignee)) ||
                 value.subtasks.some(s => s.assignee && s.assignee !== existing?.subtasks.find(old => old.id === s.id)?.assignee && !active.includes(s.assignee))
               )
-                fail(400, 'Assignee harus anggota aktif workspace.');
-              if (new Set(value.subtasks.map(s => s.id)).size !== value.subtasks.length) fail(400, 'ID subtask harus unik.');
-              if (value.start && value.due && value.start > value.due) fail(400, 'Tanggal mulai harus sebelum deadline.');
-              if (value.recur && !value.due) fail(400, 'Task berulang harus memiliki deadline.');
-              if (!value.key.startsWith(project.key + '-')) fail(400, 'Nomor task tidak sesuai proyek.');
+                fail(400, 'The assignee must be an active workspace member.');
+              if (new Set(value.subtasks.map(s => s.id)).size !== value.subtasks.length) fail(400, 'Subtask IDs must be unique.');
+              if (value.start && value.due && value.start > value.due) fail(400, 'The start date must be before the due date.');
+              if (value.recur && !value.due) fail(400, 'Recurring tasks require a due date.');
+              if (!value.key.startsWith(project.key + '-')) fail(400, 'The task number does not match its project.');
               const changedAssignees = [
                 ...(value.assignee && value.assignee !== existing?.assignee ? [value.assignee] : []),
                 ...value.subtasks.filter(s => s.assignee && s.assignee !== existing?.subtasks.find(old => old.id === s.id)?.assignee).map(s => s.assignee),
               ];
-              if (changedAssignees.some(id => !canRead(project, id, activeRoles.get(id)))) fail(400, 'Assignee harus memiliki akses ke proyek.');
+              if (changedAssignees.some(id => !canRead(project, id, activeRoles.get(id)))) fail(400, 'The assignee must have access to the project.');
               value.created = existing?.created || Date.now();
               value.updated = Date.now();
             }
@@ -387,7 +388,7 @@ export function registerContent(app, pool, authenticated) {
                 new Set(value.attendees).size !== value.attendees.length ||
                 value.attendees.some(id => !active.includes(id) || !canRead(project, id, activeRoles.get(id)))
               )
-                fail(400, 'Peserta event harus anggota aktif yang dapat mengakses proyek.');
+                fail(400, 'Event attendees must be active members with project access.');
             }
             await db.query(
               `INSERT INTO ${table}(workspace_id,id,project_id,data) VALUES ($1,$2,$3,$4) ON CONFLICT(workspace_id,id) DO UPDATE SET project_id=EXCLUDED.project_id,data=EXCLUDED.data`,
@@ -425,8 +426,7 @@ export function registerContent(app, pool, authenticated) {
         const changedIds = new Set(input.operations.filter(op => op.entity === 'task' && op.value !== null).map(op => op.id));
         const deletedIds = new Set(input.operations.filter(op => op.entity === 'task' && op.value === null).map(op => op.id));
         for (const task of tasks) {
-          for (const dep of task.data.deps)
-            if (changedIds.has(task.id) && !graph.has(dep) && !deletedIds.has(dep)) fail(400, 'Dependency task tidak ditemukan.');
+          for (const dep of task.data.deps) if (changedIds.has(task.id) && !graph.has(dep) && !deletedIds.has(dep)) fail(400, 'Task dependency not found.');
           const cleaned = task.data.deps.filter(dep => graph.has(dep));
           if (cleaned.length !== task.data.deps.length) {
             task.data.deps = cleaned;
@@ -442,7 +442,7 @@ export function registerContent(app, pool, authenticated) {
         const done = new Set(),
           visiting = new Set();
         const visit = id => {
-          if (visiting.has(id)) fail(400, 'Dependency task tidak boleh membentuk siklus.');
+          if (visiting.has(id)) fail(400, 'Task dependencies cannot form a cycle.');
           if (done.has(id)) return;
           visiting.add(id);
           for (const next of graph.get(id) || []) visit(next);

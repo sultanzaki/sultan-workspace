@@ -10,21 +10,19 @@ export function initializationDiagnostic(error) {
     else if (stage === 'pool') code = 'DATABASE_POOL_ERROR';
     else code = 'API_INITIALIZATION_ERROR';
   }
-  let message = 'Layanan akun belum siap. Admin perlu memeriksa konfigurasi database dan deployment.';
-  if (['42P01', '3F000'].includes(code)) message = 'Database belum disiapkan. Admin perlu menjalankan migrasi Supabase terlebih dahulu.';
+  let message = 'The account service is not ready. Check the database and deployment configuration.';
+  if (['42P01', '3F000'].includes(code)) message = 'The database is not ready. An administrator must run the Supabase migrations first.';
   else if (['ENETUNREACH', 'EHOSTUNREACH', 'ETIMEDOUT', 'DATABASE_TIMEOUT'].includes(code))
-    message = 'Server belum dapat menjangkau database. Periksa koneksi Session pooler Supabase port 5432 pada DATABASE_URL.';
-  else if (['28P01', '28000'].includes(code)) message = 'Koneksi database ditolak. Admin perlu memeriksa username dan password database pada DATABASE_URL.';
+    message = 'The server cannot reach the database. Check the Supabase session pooler connection on port 5432 in DATABASE_URL.';
+  else if (['28P01', '28000'].includes(code)) message = 'Database connection rejected. Check the database username and password in DATABASE_URL.';
   else if (['SELF_SIGNED_CERT_IN_CHAIN', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY'].includes(code))
-    message = 'Sertifikat koneksi database belum dikenali. Admin perlu memasang sertifikat CA Supabase melalui DATABASE_CA_PEM.';
-  else if (code === 'ENOTFOUND') message = 'Alamat server database tidak ditemukan. Periksa hostname pada DATABASE_URL.';
-  else if (code.startsWith('APP_ORIGIN'))
-    message = 'Alamat website belum dikonfigurasi dengan benar. Isi APP_ORIGIN dengan https://sultan-workspace.vercel.app tanpa slash terakhir.';
-  else if (code === 'RESEND_KEY_REQUIRED') message = 'Email Resend belum lengkap. Admin perlu mengisi RESEND_API_KEY pada Vercel.';
-  else if (code === 'MAIL_FROM_REQUIRED')
-    message = 'Alamat pengirim email belum diatur. Isi MAIL_FROM dengan alamat pada domain yang sudah diverifikasi di Resend.';
-  else if (code === 'SMTP_HOST_REQUIRED') message = 'Pengiriman SMTP belum lengkap. Periksa SMTP_HOST atau gunakan konfigurasi Resend API.';
-  else if (code === 'CONFIG_INVALID') message = 'Konfigurasi server belum lengkap atau tidak valid. Admin perlu memeriksa nama isian yang tercantum pada log.';
+    message = 'The database certificate is not trusted. Configure the Supabase CA certificate in DATABASE_CA_PEM.';
+  else if (code === 'ENOTFOUND') message = 'Database server not found. Check the hostname in DATABASE_URL.';
+  else if (code.startsWith('APP_ORIGIN')) message = 'Set APP_ORIGIN to https://sultan-workspace.vercel.app without a trailing slash.';
+  else if (code === 'RESEND_KEY_REQUIRED') message = 'Configure RESEND_API_KEY in Vercel to enable Resend email delivery.';
+  else if (code === 'MAIL_FROM_REQUIRED') message = 'Configure MAIL_FROM with an address on your verified Resend domain.';
+  else if (code === 'SMTP_HOST_REQUIRED') message = 'Configure SMTP_HOST or use the Resend API for email delivery.';
+  else if (code === 'CONFIG_INVALID') message = 'Server configuration is incomplete or invalid. Check the configuration fields listed in the logs.';
   // Only controlled categories and field names are returned/logged, never raw errors.
   const fields = Array.isArray(error.configFields) ? error.configFields.filter(field => typeof field === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(field)) : [];
   return { code, stage, fields, message };

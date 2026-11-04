@@ -2,6 +2,7 @@
 import { $, esc } from '../core/utils.js';
 import { ic } from '../core/icons.js';
 import { S, save } from '../core/store.js';
+import { translate } from '../core/locale.js';
 import { render } from '../shell/render.js';
 import { getWorkspaceSession } from '../core/workspace-session.js';
 
@@ -20,7 +21,7 @@ export function toast(msg, opt = {}) {
   el.className = 'toast';
   el.setAttribute('role', 'status');
   const icon = opt.kind === 'err' ? ic('circle-alert', 15, 'bad') : opt.kind === 'info' ? ic('info', 15) : ic('circle-check', 15, 'ok');
-  el.innerHTML = `${icon}<span class="grow">${esc(msg)}</span>${opt.action ? `<button class="ta">${esc(opt.action)}</button>` : ''}<button class="ibtn ibtn-xs" aria-label="Dismiss" style="color:inherit;opacity:.6">${ic('x', 13)}</button>`;
+  el.innerHTML = `${icon}<span class="grow">${esc(translate(msg, S.prefs.lang))}</span>${opt.action ? `<button class="ta">${esc(translate(opt.action, S.prefs.lang))}</button>` : ''}<button class="ibtn ibtn-xs" aria-label="${esc(translate('Dismiss', S.prefs.lang))}" style="color:inherit;opacity:.6">${ic('x', 13)}</button>`;
   const kill = () => {
     el.classList.add('out');
     setTimeout(() => el.remove(), 160);

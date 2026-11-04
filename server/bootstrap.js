@@ -10,7 +10,7 @@ export async function bootstrap(pool, input) {
   return transaction(pool, async db => {
     await db.query('SELECT pg_advisory_xact_lock(84291371)');
     const { rows } = await db.query('SELECT 1 FROM users LIMIT 1');
-    if (rows.length) fail(409, 'Bootstrap sudah dijalankan. Gunakan undangan untuk akun berikutnya.');
+    if (rows.length) fail(409, 'Setup is already complete. Invite additional accounts instead.');
     const userId = randomUUID(),
       workspaceId = randomUUID();
     await db.query('INSERT INTO users(id,email,name,password_hash,email_verified_at) VALUES ($1,$2,$3,$4,now())', [userId, data.email, data.name, hash]);

@@ -1,3 +1,4 @@
+import { translate } from '../core/locale.js';
 /* ---------- INBOX ---------- */
 import { MOD, ago, esc } from '../core/utils.js';
 import { ic } from '../core/icons.js';
@@ -42,9 +43,9 @@ export function notifText(n) {
   const t = n.task ? task(n.task) : null;
   const p = n.project ? proj(n.project) : t ? proj(t.project) : null;
   const who = n.by ? `<b style="font-weight:600">${esc(mem(n.by)?.name)}</b>` : '';
-  if (!n.by && p && !t) return `<b style="font-weight:600">${esc(n.text)}</b>`;
-  if (!n.by && t) return `<b style="font-weight:600">${esc(t.title)}</b> <span class="muted">${esc(n.text)}</span>`;
-  return `${who} <span class="muted">${esc(n.text)}</span> ${t ? `<b style="font-weight:500">${esc(t.title)}</b>` : ''}`;
+  if (!n.by && p && !t) return `<b style="font-weight:600">${esc(translate(n.text, S.prefs.lang))}</b>`;
+  if (!n.by && t) return `<b style="font-weight:600">${esc(t.title)}</b> <span class="muted">${esc(translate(n.text, S.prefs.lang))}</span>`;
+  return `${who} <span class="muted">${esc(translate(n.text, S.prefs.lang))}</span> ${t ? `<b style="font-weight:500">${esc(t.title)}</b>` : ''}`;
 }
 export function notifIcon(n) {
   if (n.by) return av(n.by, 'md', false);
@@ -70,7 +71,7 @@ export function inboxPreview(n) {
   const t = n.task ? task(n.task) : null;
   const p = n.project ? proj(n.project) : t ? proj(t.project) : null;
   if (!t)
-    return `<div style="padding:24px 28px"><button class="btn btn-sm btn-ghost" data-a="set" data-k="inboxSel" data-v="" style="margin:-4px 0 12px -8px">${ic('arrow-left', 14)}Back</button><div class="alert danger">${ic('triangle-alert', 16)}<div><b>${esc(n.text)}</b><div class="muted" style="margin-top:2px">${esc(n.snippet)}</div></div></div><div style="margin-top:14px"><button class="btn btn-secondary" data-a="go" data-r="project" data-id="${p.id}" data-tab="overview">Open project</button></div></div>`;
+    return `<div style="padding:24px 28px"><button class="btn btn-sm btn-ghost" data-a="set" data-k="inboxSel" data-v="" style="margin:-4px 0 12px -8px">${ic('arrow-left', 14)}Back</button><div class="alert danger">${ic('triangle-alert', 16)}<div><b>${esc(translate(n.text, S.prefs.lang))}</b><div class="muted" style="margin-top:2px">${esc(n.snippet)}</div></div></div><div style="margin-top:14px"><button class="btn btn-secondary" data-a="go" data-r="project" data-id="${p.id}" data-tab="overview">Open project</button></div></div>`;
   const cs = commentsOf(t.id).slice(-4);
   return `<div class="row" style="height:46px;padding:0 16px;border-bottom:1px solid var(--border);gap:8px;flex-shrink:0">
       <button class="ibtn ibtn-sm" data-a="set" data-k="inboxSel" data-v="" aria-label="Back">${ic('arrow-left', 15)}</button>

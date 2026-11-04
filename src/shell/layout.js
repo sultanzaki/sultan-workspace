@@ -26,17 +26,18 @@ import { pageStates, pageSystem } from '../pages/design-system.js';
 import { pageArchive } from '../features/archive.js';
 import { getWorkspaceSession } from '../core/workspace-session.js';
 import { syncStatusText } from '../core/content-sync.js';
+import { translate } from '../core/locale.js';
 
 export function renderShell() {
   const u = S.ui;
   const session = getWorkspaceSession(),
-    syncText = syncStatusText(session?.syncState, session?.syncMessage);
+    syncText = translate(syncStatusText(session?.syncState, session?.syncMessage), S.prefs.lang);
   return `<button class="skip" data-a="skipToContent">Skip to content</button><div class="shell ${u.collapsed ? 'collapsed' : ''} ${u.mnav ? 'mnav' : ''} ${u.fx.tabs ? 'fx-tabs' : ''}">
     ${renderSidebar()}
     ${u.mnav ? '<div class="side-scrim" data-a="closeMnav"></div>' : ''}
     <main class="main" id="main">
       ${renderTopbar()}
-      ${session ? `<div class="native-workspace-notice"><span class="native-sync-status" role="status" data-state="${esc(session.syncState || '')}" ${syncText ? '' : 'hidden'}>${esc(syncText)}</span>${session.hasLocalDraft ? '<button class="btn btn-sm btn-secondary" data-a="nativeImportLocal">Impor data lokal lama</button>' : ''}${session.draftBackup ? '<button class="btn btn-sm btn-ghost" data-a="nativeDownloadDraft">Unduh draft</button>' : ''}${session.syncState === 'error' ? '<button class="btn btn-sm btn-ghost" data-a="nativeRetry">Coba simpan lagi</button>' : ''}<button class="btn btn-sm btn-ghost" data-a="nativeRefresh">Muat data terbaru</button><button class="btn btn-sm btn-secondary" data-a="nativeManage">Kelola workspace</button><button class="btn btn-sm btn-ghost" data-a="nativeSignOut">Logout</button></div>` : ''}
+      ${session ? `<div class="native-workspace-notice" ${syncText || session.hasLocalDraft || session.draftBackup ? '' : 'hidden'}><span class="native-sync-status" role="status" data-state="${esc(session.syncState || '')}" ${syncText ? '' : 'hidden'}>${esc(syncText)}</span>${session.hasLocalDraft ? '<button class="btn btn-sm btn-secondary" data-a="nativeImportLocal">Import previous local data</button>' : ''}${session.draftBackup ? '<button class="btn btn-sm btn-ghost" data-a="nativeDownloadDraft">Download draft</button>' : ''}${session.syncState === 'error' ? '<button class="btn btn-sm btn-ghost" data-a="nativeRetry">Try saving again</button>' : ''}</div>` : ''}
       ${u.offline ? `<div class="offline-bar" role="alert">${ic('wifi-off', 15)}<span><b>You're offline.</b> Changes won't be saved until your connection is back.</span><span class="sp"></span><button class="btn btn-sm btn-secondary" data-a="retryOnline">Try again</button></div>` : ''}
       <div class="content ${u.fx.route ? 'fx-route' : ''}" id="main-content" tabindex="-1" data-keep="c:${u.route}:${u.params.id || ''}:${u.params.tab || ''}:${u.params.sec || ''}">${u.loading ? skeleton() : renderPage()}</div>
     </main>

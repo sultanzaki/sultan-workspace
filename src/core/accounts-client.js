@@ -62,20 +62,20 @@ export function initAccounts({ session, renderSynced }) {
   A.nativeSaveProfile = () => {
     const input = { name: value('native-profile-name'), title: value('native-profile-title'), color: value('native-profile-color') };
     if (!input.name.trim()) {
-      toast('Nama tidak boleh kosong.', { kind: 'err' });
+      toast('Name cannot be empty.', { kind: 'err' });
       return;
     }
     void run(async () => {
       const user = await api('/account/profile', 'PATCH', input);
       session.user = { ...session.user, ...user };
-      toast('Profil disimpan.', { kind: 'info' });
+      toast('Profile saved.', { kind: 'info' });
     });
   };
   IN.nativeAvatar = el => {
     const file = el.files?.[0];
     if (!file) return;
     if (file.size > 262144 || !file.size) {
-      toast('Foto maksimal 256 KB.', { kind: 'err' });
+      toast('Photos must not exceed 256 KB.', { kind: 'err' });
       return;
     }
     void run(async () => {
@@ -88,11 +88,11 @@ export function initAccounts({ session, renderSynced }) {
   A.nativeSavePassword = () => {
     const input = { ...sensitive(), newPassword: value('native-new-password') };
     if (input.newPassword !== value('native-confirm-password')) {
-      toast('Konfirmasi password tidak sesuai.', { kind: 'err' });
+      toast('Password confirmation does not match.', { kind: 'err' });
       return;
     }
     if (input.newPassword.length < 12) {
-      toast('Password baru minimal 12 karakter.', { kind: 'err' });
+      toast('Your new password must contain at least 12 characters.', { kind: 'err' });
       return;
     }
     void run(async () => {

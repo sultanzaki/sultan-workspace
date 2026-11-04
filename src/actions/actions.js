@@ -137,7 +137,7 @@ export function restore(snap) {
   if (typeof snap === 'object') {
     const session = getWorkspaceSession();
     if (session?.contentRevision !== snap.revision + 1 || session.hasPendingChanges()) {
-      toast('Data sudah berubah sejak tindakan ini. Gunakan Archive untuk memulihkan item, atau periksa data terbaru.', { kind: 'info' });
+      toast('Data has changed since this action. Restore items from Archive or review the latest data.', { kind: 'info' });
       return;
     }
   }

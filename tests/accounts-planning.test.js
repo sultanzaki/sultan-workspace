@@ -25,7 +25,7 @@ test('authenticator codes match RFC 6238 and encrypted secrets are bound to thei
     encrypted = encryptSecret(secret, config, 'alice');
   assert.notEqual(encrypted, secret);
   assert.equal(decryptSecret(encrypted, config, 'alice'), secret);
-  assert.throws(() => decryptSecret(encrypted, config, 'bob'), /Kunci keamanan/);
+  assert.throws(() => decryptSecret(encrypted, config, 'bob'), /encryption key/);
   assert.throws(() => encryptSecret(secret, {}, 'alice'), /AUTH_ENCRYPTION_KEY/);
 });
 
