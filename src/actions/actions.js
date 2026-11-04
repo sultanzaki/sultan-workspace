@@ -75,7 +75,7 @@ export function applyPatch(t, patch) {
         logAct('completed', t);
         fxSet({ done: t.id });
       } else logAct('moved', t, `from ${ST[old].name} to ${ST[nv].name}`);
-      if (nv === 'done' && t.recur && t.due) {
+      if (!getWorkspaceSession() && nv === 'done' && t.recur && t.due) {
         const nd = iso(addD(parse(t.due), RECUR_DAYS[t.recur] || 7));
         const n = createTask({
           ...JSON.parse(JSON.stringify(t)),
@@ -809,8 +809,7 @@ A.previewFile = el => {
 };
 export function handleFiles(files, ctx) {
   if (getWorkspaceSession()) {
-    toast('Penyimpanan isi file belum terhubung ke server. File belum diunggah.', { kind: 'info' });
-    return;
+    return getWorkspaceSession().uploadFiles?.(files, ctx);
   }
   if (!files || !files.length) return;
   if (S.ui.offline) {
@@ -929,6 +928,8 @@ A.react = el => {
 document.addEventListener('mousedown', e => {
   const b = e.target.closest('[data-cmd]');
   if (!b) return;
+  const session = getWorkspaceSession();
+  if (b.disabled || (session?.canProject && !session.canProject(proj(task(S.ui.drawer)?.project)))) return;
   e.preventDefault();
   const [cmd, arg] = b.dataset.cmd.split(':');
   if (cmd === 'createLink') {
@@ -946,7 +947,9 @@ document.addEventListener('mousedown', e => {
 document.addEventListener('input', e => {
   const ed = e.target.closest?.('[data-rte]');
   if (!ed) return;
-  const t = task(ed.dataset.rte);
+  const t = task(ed.dataset.rte),
+    session = getWorkspaceSession();
+  if (session?.canProject && !session.canProject(proj(t?.project))) return;
   if (t) {
     t.desc = ed.innerHTML;
     t.updated = Date.now();

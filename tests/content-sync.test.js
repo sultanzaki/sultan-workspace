@@ -8,6 +8,12 @@ test('diff ignores JSON object ordering while retaining actual field changes and
   assert.deepEqual(contentOperations({ projects: [{ id: 'p', name: 'A' }] }, { projects: [{ name: 'A', id: 'p' }] }), []);
   assert.deepEqual(contentOperations({ tasks: [{ id: 't' }] }, { tasks: [] }), [{ entity: 'task', id: 't', value: null }]);
 });
+test('server attachment metadata is excluded from task mutations', () => {
+  assert.deepEqual(
+    contentOperations({ tasks: [{ id: 't', title: 'Title', attachments: [] }] }, { tasks: [{ id: 't', title: 'Title', attachments: [{ id: 'real-file' }] }] }),
+    [],
+  );
+});
 test('edits made during a request are flushed afterwards without being overwritten', async () => {
   let current = { projects: [{ id: 'p', name: 'first' }], tasks: [], savedViews: [], preferences: {} };
   let release, started;
@@ -138,4 +144,57 @@ test('background refresh never discards edits started while the request was in f
   await refreshing;
   assert.equal(sync.hasUnsavedContent(), true);
   assert.equal(current.projects[0].name, 'new edit');
+});
+
+test('preference edits made while a newer shared revision arrives preserve the remote project and save the latest preference', async () => {
+  const base = { ...initial(), projects: [{ id: 'p', name: 'Original', members: [] }] };
+  let current = { projects: clone(base.projects), tasks: [], savedViews: [], preferences: { prefs: { tz: 'Asia/Jakarta' } } },
+    release,
+    started;
+  const gate = new Promise(resolve => (release = resolve)),
+    ready = new Promise(resolve => (started = resolve)),
+    bodies = [];
+  const remote = {
+    ...base,
+    revision: 1,
+    projects: [{ id: 'p', name: 'Updated by lead', members: ['new-guest'] }],
+    events: [{ id: 'event', title: 'New event' }],
+  };
+  const sync = createContentSync({
+    initial: base,
+    capture: () => current,
+    apply: value => {
+      current = {
+        projects: clone(value.projects),
+        tasks: value.tasks,
+        savedViews: value.savedViews,
+        events: value.events,
+        preferences: clone(value.preferences),
+      };
+    },
+    status: () => {},
+    backup: () => assert.fail('Independent preference edits must not create a conflict'),
+    request: async (method, body) => {
+      bodies.push(clone(body));
+      if (bodies.length === 1) {
+        started();
+        await gate;
+      }
+      return { ...remote, preferences: clone(body.preferences) };
+    },
+  });
+  const saving = sync.flush();
+  await ready;
+  current.preferences.prefs.timeFmt = '24';
+  release();
+  await saving;
+  assert.equal(bodies.length, 2);
+  assert.ok(bodies.every(body => body.operations.length === 0));
+  assert.equal(bodies[1].revision, 1);
+  assert.equal(current.projects[0].name, 'Updated by lead');
+  assert.deepEqual(current.projects[0].members, ['new-guest']);
+  assert.equal(current.events[0].title, 'New event');
+  assert.equal(current.preferences.prefs.tz, 'Asia/Jakarta');
+  assert.equal(current.preferences.prefs.timeFmt, '24');
+  assert.equal(sync.isDirty(), false);
 });

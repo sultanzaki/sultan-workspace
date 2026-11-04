@@ -193,6 +193,259 @@ $migration_body$;
 END
 $migration_runner$;
 
+DO $migration_runner$
+DECLARE applied_checksum text;
+BEGIN
+  SELECT checksum INTO applied_checksum FROM app_private.schema_migrations WHERE name = '003_collaboration_automation.sql';
+  IF applied_checksum IS NULL THEN
+    EXECUTE $migration_body$CREATE TABLE task_comments (
+  id uuid PRIMARY KEY,
+  workspace_id uuid NOT NULL,
+  project_id text NOT NULL,
+  task_id text NOT NULL,
+  author_id uuid NOT NULL REFERENCES users(id),
+  body text NOT NULL CHECK (length(body) BETWEEN 1 AND 10000),
+  mentions uuid[] NOT NULL DEFAULT '{}',
+  reactions jsonb NOT NULL DEFAULT '{}',
+  version integer NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  edited_at timestamptz,
+  FOREIGN KEY(workspace_id,project_id) REFERENCES projects(workspace_id,id) ON DELETE CASCADE,
+  FOREIGN KEY(workspace_id,task_id) REFERENCES tasks(workspace_id,id) ON DELETE CASCADE
+);
+CREATE INDEX task_comments_task_idx ON task_comments(workspace_id,task_id,created_at);
+CREATE TABLE project_files (
+  id uuid PRIMARY KEY,
+  workspace_id uuid NOT NULL,
+  project_id text NOT NULL,
+  task_id text,
+  author_id uuid NOT NULL REFERENCES users(id),
+  name text NOT NULL,
+  mime text NOT NULL,
+  bytes integer NOT NULL CHECK (bytes BETWEEN 1 AND 3145728),
+  content bytea NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (octet_length(content) = bytes),
+  FOREIGN KEY(workspace_id,project_id) REFERENCES projects(workspace_id,id) ON DELETE CASCADE,
+  FOREIGN KEY(workspace_id,task_id) REFERENCES tasks(workspace_id,id) ON DELETE CASCADE
+);
+CREATE INDEX project_files_project_idx ON project_files(workspace_id,project_id);
+CREATE INDEX project_files_task_idx ON project_files(workspace_id,task_id);
+CREATE TABLE user_notifications (
+  id uuid PRIMARY KEY,
+  workspace_id uuid NOT NULL,
+  recipient_id uuid NOT NULL,
+  actor_id uuid REFERENCES users(id),
+  project_id text NOT NULL,
+  task_id text NOT NULL,
+  comment_id uuid REFERENCES task_comments(id) ON DELETE CASCADE,
+  kind text NOT NULL CHECK (kind IN ('mention','assign','comment','update')),
+  message text NOT NULL,
+  snippet text NOT NULL DEFAULT '',
+  event_key text NOT NULL,
+  read_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(workspace_id,recipient_id,event_key),
+  FOREIGN KEY(workspace_id,recipient_id) REFERENCES memberships(workspace_id,user_id) ON DELETE CASCADE,
+  FOREIGN KEY(workspace_id,project_id) REFERENCES projects(workspace_id,id) ON DELETE CASCADE,
+  FOREIGN KEY(workspace_id,task_id) REFERENCES tasks(workspace_id,id) ON DELETE CASCADE
+);
+CREATE INDEX user_notifications_recipient_idx ON user_notifications(workspace_id,recipient_id,created_at DESC);
+CREATE TABLE recurrence_instances (
+  workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  source_task_id text NOT NULL,
+  next_task_id text NOT NULL,
+  anchor_day integer NOT NULL CHECK (anchor_day BETWEEN 1 AND 31),
+  next_due date NOT NULL,
+  PRIMARY KEY(workspace_id,source_task_id),
+  UNIQUE(workspace_id,next_task_id)
+);
+CREATE TABLE automation_runs (
+  workspace_id uuid PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+  checked_at timestamptz NOT NULL
+);
+CREATE INDEX tasks_deadline_idx ON tasks(workspace_id,(data->>'due')) WHERE data->>'status' <> 'done';
+$migration_body$;
+    INSERT INTO app_private.schema_migrations(name, checksum) VALUES ('003_collaboration_automation.sql', 'a41a0ff4150a237e7acc47529d44d6201ad8221532387030c5a9c353262db78d');
+  ELSIF applied_checksum <> 'a41a0ff4150a237e7acc47529d44d6201ad8221532387030c5a9c353262db78d' THEN
+    RAISE EXCEPTION 'Applied migration changed: 003_collaboration_automation.sql';
+  END IF;
+END
+$migration_runner$;
+
+DO $migration_runner$
+DECLARE applied_checksum text;
+BEGIN
+  SELECT checksum INTO applied_checksum FROM app_private.schema_migrations WHERE name = '004_accounts_security.sql';
+  IF applied_checksum IS NULL THEN
+    EXECUTE $migration_body$ALTER TABLE users ADD COLUMN title text NOT NULL DEFAULT '' CHECK(length(title)<=100);
+ALTER TABLE users ADD COLUMN avatar_color text NOT NULL DEFAULT '#4B5BD6' CHECK(avatar_color ~ '^#[0-9A-Fa-f]{6}$');
+ALTER TABLE users ADD COLUMN avatar bytea CHECK(octet_length(avatar)<=262144);
+ALTER TABLE users ADD COLUMN avatar_mime text;
+ALTER TABLE users ADD COLUMN avatar_updated_at timestamptz;
+ALTER TABLE sessions ADD COLUMN id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE;
+ALTER TABLE sessions ADD COLUMN user_agent text NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN mfa_verified_at timestamptz;
+CREATE TABLE user_security (
+  user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  enabled boolean NOT NULL DEFAULT false,
+  secret text,
+  pending_secret text,
+  pending_until timestamptz,
+  last_counter bigint NOT NULL DEFAULT -1
+);
+CREATE TABLE recovery_codes (
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash text NOT NULL,
+  PRIMARY KEY(user_id,code_hash)
+);
+CREATE TABLE login_challenges (
+  token_hash text PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  remember boolean NOT NULL DEFAULT false,
+  password_hash text NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX login_challenges_expiry_idx ON login_challenges(expires_at);
+$migration_body$;
+    INSERT INTO app_private.schema_migrations(name, checksum) VALUES ('004_accounts_security.sql', 'f6ca0ce2be0d07053bc207dcde10455411a9f79fde8dc7b51aa34e3d2b56badf');
+  ELSIF applied_checksum <> 'f6ca0ce2be0d07053bc207dcde10455411a9f79fde8dc7b51aa34e3d2b56badf' THEN
+    RAISE EXCEPTION 'Applied migration changed: 004_accounts_security.sql';
+  END IF;
+END
+$migration_runner$;
+
+DO $migration_runner$
+DECLARE applied_checksum text;
+BEGIN
+  SELECT checksum INTO applied_checksum FROM app_private.schema_migrations WHERE name = '005_administration.sql';
+  IF applied_checksum IS NULL THEN
+    EXECUTE $migration_body$ALTER TABLE memberships DROP CONSTRAINT memberships_role_check;
+ALTER TABLE memberships ADD CONSTRAINT memberships_role_check CHECK(role IN ('owner','admin','member','guest'));
+ALTER TABLE invitations DROP CONSTRAINT invitations_role_check;
+ALTER TABLE invitations ADD CONSTRAINT invitations_role_check CHECK(role IN ('admin','member','guest'));
+ALTER TABLE invitations ADD COLUMN delivery text NOT NULL DEFAULT 'email' CHECK(delivery IN ('email','link'));
+ALTER TABLE invitations ADD COLUMN project_id text;
+ALTER TABLE invitations ADD COLUMN project_permission text CHECK(project_permission IN ('viewer','commenter','editor'));
+ALTER TABLE invitations ADD FOREIGN KEY(workspace_id,project_id) REFERENCES projects(workspace_id,id) ON DELETE CASCADE;
+ALTER TABLE workspaces ADD COLUMN slug text UNIQUE CHECK(slug ~ '^[a-z0-9][a-z0-9-]{2,59}$');
+ALTER TABLE workspaces ADD COLUMN settings jsonb NOT NULL DEFAULT '{}';
+CREATE TABLE project_access_requests (
+  id uuid PRIMARY KEY,
+  workspace_id uuid NOT NULL,
+  project_id text NOT NULL,
+  user_id uuid NOT NULL,
+  permission text NOT NULL CHECK(permission IN ('viewer','commenter','editor')),
+  reason text NOT NULL DEFAULT '' CHECK(length(reason)<=1000),
+  status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+  decided_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  decided_at timestamptz,
+  UNIQUE(workspace_id,project_id,user_id),
+  FOREIGN KEY(workspace_id,project_id) REFERENCES projects(workspace_id,id) ON DELETE CASCADE,
+  FOREIGN KEY(workspace_id,user_id) REFERENCES memberships(workspace_id,user_id) ON DELETE CASCADE
+);
+$migration_body$;
+    INSERT INTO app_private.schema_migrations(name, checksum) VALUES ('005_administration.sql', 'f06275025aea1f30ffcfe0c0c0ed08a2163338e089cf5c7ba3a6e0396906f947');
+  ELSIF applied_checksum <> 'f06275025aea1f30ffcfe0c0c0ed08a2163338e089cf5c7ba3a6e0396906f947' THEN
+    RAISE EXCEPTION 'Applied migration changed: 005_administration.sql';
+  END IF;
+END
+$migration_runner$;
+
+DO $migration_runner$
+DECLARE applied_checksum text;
+BEGIN
+  SELECT checksum INTO applied_checksum FROM app_private.schema_migrations WHERE name = '006_planning.sql';
+  IF applied_checksum IS NULL THEN
+    EXECUTE $migration_body$CREATE TABLE calendar_events (
+  workspace_id uuid NOT NULL,
+  id text NOT NULL,
+  project_id text NOT NULL,
+  data jsonb NOT NULL,
+  PRIMARY KEY(workspace_id,id),
+  FOREIGN KEY(workspace_id,project_id) REFERENCES projects(workspace_id,id) ON DELETE CASCADE
+);
+CREATE INDEX calendar_events_project_idx ON calendar_events(workspace_id,project_id);
+$migration_body$;
+    INSERT INTO app_private.schema_migrations(name, checksum) VALUES ('006_planning.sql', '687af10db10ccb1103f79c5f7d4c7dac24b046c760605666d8943cfca195d7c2');
+  ELSIF applied_checksum <> '687af10db10ccb1103f79c5f7d4c7dac24b046c760605666d8943cfca195d7c2' THEN
+    RAISE EXCEPTION 'Applied migration changed: 006_planning.sql';
+  END IF;
+END
+$migration_runner$;
+
+DO $migration_runner$
+DECLARE applied_checksum text;
+BEGIN
+  SELECT checksum INTO applied_checksum FROM app_private.schema_migrations WHERE name = '007_email.sql';
+  IF applied_checksum IS NULL THEN
+    EXECUTE $migration_body$CREATE TABLE email_events (
+  id uuid PRIMARY KEY,
+  workspace_id uuid NOT NULL,
+  recipient_id uuid NOT NULL,
+  actor_id uuid REFERENCES users(id),
+  project_id text NOT NULL,
+  task_id text NOT NULL,
+  comment_id uuid REFERENCES task_comments(id) ON DELETE CASCADE,
+  category text NOT NULL CHECK(category IN ('mention','assign','comment','status','due')),
+  message text NOT NULL,
+  snippet text NOT NULL DEFAULT '',
+  event_key text NOT NULL,
+  processed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(workspace_id,recipient_id,event_key),
+  FOREIGN KEY(workspace_id,recipient_id) REFERENCES memberships(workspace_id,user_id) ON DELETE CASCADE,
+  FOREIGN KEY(workspace_id,project_id) REFERENCES projects(workspace_id,id) ON DELETE CASCADE,
+  FOREIGN KEY(workspace_id,task_id) REFERENCES tasks(workspace_id,id) ON DELETE CASCADE
+);
+CREATE INDEX email_events_pending_idx ON email_events(created_at) WHERE processed_at IS NULL;
+CREATE INDEX email_events_digest_idx ON email_events(workspace_id,recipient_id,created_at);
+CREATE TABLE email_digest_runs (
+  workspace_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  period_end timestamptz NOT NULL,
+  weekday boolean NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(workspace_id,user_id,period_end),
+  FOREIGN KEY(workspace_id,user_id) REFERENCES memberships(workspace_id,user_id) ON DELETE CASCADE
+);
+CREATE TABLE email_unsubscribe_tokens (
+  token_hash text PRIMARY KEY,
+  workspace_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  expires_at timestamptz NOT NULL,
+  FOREIGN KEY(workspace_id,user_id) REFERENCES memberships(workspace_id,user_id) ON DELETE CASCADE
+);
+ALTER TABLE mail_outbox ADD COLUMN kind text NOT NULL DEFAULT 'invitation' CHECK(kind IN ('invitation','reset','notification','digest','security'));
+UPDATE mail_outbox SET kind='reset' WHERE reset_hash IS NOT NULL;
+ALTER TABLE mail_outbox ADD COLUMN workspace_id uuid REFERENCES workspaces(id) ON DELETE CASCADE;
+UPDATE mail_outbox o SET workspace_id=i.workspace_id FROM invitations i WHERE i.id=o.invitation_id;
+ALTER TABLE mail_outbox ADD COLUMN user_id uuid REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE mail_outbox ADD COLUMN context jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE mail_outbox ADD COLUMN html text NOT NULL DEFAULT '';
+ALTER TABLE mail_outbox ADD COLUMN headers jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE mail_outbox ADD COLUMN rendered_at timestamptz;
+ALTER TABLE mail_outbox ADD COLUMN expires_at timestamptz NOT NULL DEFAULT now()+interval '7 days';
+ALTER TABLE mail_outbox ADD COLUMN dedupe_key text UNIQUE;
+ALTER TABLE mail_outbox ADD COLUMN claim_token uuid;
+ALTER TABLE mail_outbox ADD COLUMN locked_until timestamptz;
+ALTER TABLE mail_outbox ADD COLUMN delivery_status text NOT NULL DEFAULT 'queued';
+ALTER TABLE mail_outbox ADD COLUMN error_code text;
+ALTER TABLE mail_outbox ADD COLUMN provider_id text UNIQUE;
+ALTER TABLE mail_outbox ADD COLUMN finished_at timestamptz;
+UPDATE mail_outbox SET delivery_status='accepted',finished_at=sent_at WHERE sent_at IS NOT NULL;
+CREATE INDEX mail_outbox_ready_idx ON mail_outbox(next_attempt_at) WHERE finished_at IS NULL;
+CREATE TABLE email_suppressions (recipient text PRIMARY KEY,reason text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE email_webhook_events (id text PRIMARY KEY,received_at timestamptz NOT NULL DEFAULT now());
+$migration_body$;
+    INSERT INTO app_private.schema_migrations(name, checksum) VALUES ('007_email.sql', '05179afed05176a90f884ab5419d75592633be62a80d3afb674258f504164809');
+  ELSIF applied_checksum <> '05179afed05176a90f884ab5419d75592633be62a80d3afb674258f504164809' THEN
+    RAISE EXCEPTION 'Applied migration changed: 007_email.sql';
+  END IF;
+END
+$migration_runner$;
+
 COMMIT;
 
 -- Supabase SQL Editor displays this status instead of the lock's empty result.

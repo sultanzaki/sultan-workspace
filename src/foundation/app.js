@@ -84,7 +84,7 @@ async function loadSession() {
   Object.assign(state, session);
 }
 async function loadWorkspace(id = state.workspace?.id || new URLSearchParams(location.search).get('workspace')) {
-  const selected = state.workspaces.find(w => w.id === id) || state.workspaces[0];
+  const selected = state.workspaces.find(w => w.id === id || w.slug === id) || state.workspaces[0];
   state.workspace = null;
   state.invitations = [];
   state.audit = [];
@@ -103,6 +103,13 @@ async function refresh(id) {
   await loadWorkspace(id);
 }
 function authContent() {
+  if (state.view === 'unsubscribe')
+    return `<h1>Pengaturan email aktivitas</h1><p>${state.unsubscribeWorkspace ? `Nonaktifkan email aktivitas untuk ${esc(state.unsubscribeWorkspace)}?` : 'Memuat pengaturan email…'}</p><p>Email keamanan akun dan undangan tetap tersedia.</p>${state.unsubscribeWorkspace ? `<form data-form="unsubscribe">${submit('Nonaktifkan email aktivitas')}</form>` : ''}<button class="btn btn-ghost" data-action="login-view">Ke login</button>`;
+  if (state.view === 'unsubscribed')
+    return '<h1>Email aktivitas dinonaktifkan</h1><p>Anda dapat mengaktifkannya kembali melalui Settings → Email setelah login.</p><button class="btn" data-action="login-view">Ke login</button>';
+
+  if (state.view === 'mfa')
+    return `<h1>Verifikasi dua langkah</h1><p class="sub">Masukkan kode authenticator atau satu recovery code. Recovery code hanya dapat dipakai sekali.</p><form data-form="mfa-login">${field('Kode 2FA atau recovery code', 'code', 'text', '', 'autocomplete="one-time-code" maxlength="64"')}${submit('Verifikasi dan login')}</form><button class="btn btn-ghost" data-action="login-view">Kembali ke login</button>`;
   if (state.view === 'setup') {
     if (state.setupAvailable === null)
       return '<h1>Setup belum dapat dimuat</h1><p>Layanan akun belum dapat dihubungi. Coba muat ulang setelah layanan kembali tersedia.</p>';
@@ -172,7 +179,14 @@ function invitationContent() {
 function render() {
   if (state.user && state.workspace && state.view === 'workspace' && !managementView) {
     root.innerHTML = '<main class="foundation-main" role="status">Membuka workspace…</main>';
-    setWorkspaceSession({ user: state.user, workspace: state.workspace, workspaces: state.workspaces, csrfToken: state.csrfToken, content: state.content });
+    setWorkspaceSession({
+      user: state.user,
+      workspace: state.workspace,
+      workspaces: state.workspaces,
+      csrfToken: state.csrfToken,
+      content: state.content,
+      features: state.features,
+    });
     document.body.classList.remove('foundation-mode');
     void import('../native-workspace.js').catch(() => {
       root.innerHTML =
@@ -195,6 +209,12 @@ root.addEventListener('submit', event => {
     const base = `/workspaces/${state.workspace?.id}`;
     let notice = 'Perubahan disimpan.';
     switch (form.dataset.form) {
+      case 'unsubscribe':
+        await api('/email/unsubscribe', 'POST', { token: state.token });
+        state.token = '';
+        state.view = 'unsubscribed';
+        render();
+        return;
       case 'owner-setup':
         if (data.password !== data.confirmation) throw new Error('Konfirmasi password belum sesuai.');
         await api('/auth/setup', 'POST', {
@@ -211,8 +231,24 @@ root.addEventListener('submit', event => {
         render();
         message('Akun owner berhasil dibuat. Silakan login. Setelah ini, hapus BOOTSTRAP_TOKEN dari Vercel.');
         return;
-      case 'login':
-        await api('/auth/login', 'POST', { email: data.email, password: data.password, remember: values.has('remember') });
+      case 'login': {
+        const result = await api('/auth/login', 'POST', { email: data.email, password: data.password, remember: values.has('remember') });
+        form.reset();
+        if (result.requiresMfa) {
+          state.challenge = result.challenge;
+          state.view = 'mfa';
+          render();
+          return;
+        }
+        await refresh();
+        state.view = state.invite ? 'invite' : 'workspace';
+        render();
+        return;
+      }
+      case 'mfa-login':
+        await api('/auth/mfa/login', 'POST', { challenge: state.challenge, code: data.code });
+        state.challenge = null;
+        form.reset();
         await refresh();
         state.view = state.invite ? 'invite' : 'workspace';
         render();
@@ -326,9 +362,10 @@ async function boot() {
   state.token = '';
   state.view = 'login';
   state.setupAvailable = null;
+  state.unsubscribeWorkspace = null;
   const setup = location.hash === '#setup';
   if (setup) state.view = 'setup';
-  const hash = location.hash.slice(1).match(/^(invite|reset)=([a-f0-9]{64})$/);
+  const hash = location.hash.slice(1).match(/^(invite|reset|unsubscribe)=([a-f0-9]{64})$/);
   if (hash) {
     state.token = hash[2];
     state.view = hash[1];
@@ -336,12 +373,13 @@ async function boot() {
   }
   try {
     try {
-      await refresh();
+      if (hash?.[1] !== 'unsubscribe') await refresh();
     } catch (error) {
       if (error.status !== 401) throw error;
     }
     if (setup) state.setupAvailable = (await api('/auth/setup')).available;
     else if (hash?.[1] === 'invite') state.invite = await api('/auth/invitations/inspect', 'POST', { token: state.token });
+    else if (hash?.[1] === 'unsubscribe') state.unsubscribeWorkspace = (await api('/email/unsubscribe/inspect', 'POST', { token: state.token })).workspace;
     else if (!hash && state.user) state.view = 'workspace';
     render();
   } catch (error) {
@@ -351,6 +389,6 @@ async function boot() {
 }
 // Email links may be opened in an already-running tab without a document reload.
 window.addEventListener('hashchange', () => {
-  if (location.hash === '#setup' || /^#(invite|reset)=[a-f0-9]{64}$/.test(location.hash)) void boot();
+  if (location.hash === '#setup' || /^#(invite|reset|unsubscribe)=[a-f0-9]{64}$/.test(location.hash)) void boot();
 });
 void boot();

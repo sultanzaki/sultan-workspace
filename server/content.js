@@ -3,6 +3,12 @@ import { randomUUID } from 'node:crypto';
 import sanitizeHtml from 'sanitize-html';
 import { transaction } from './db.js';
 import { membership, fail, digest, limit } from './security.js';
+import { canReadProject } from './content-access.js';
+import { collaborationSnapshot, taskResourcesMoved } from './collaboration.js';
+import { RECURRENCE, dueReminders, taskChanged } from './automations.js';
+import { projectAllows, ACCESS_LEVELS } from '../src/core/permissions.js';
+import { workspaceDirectory } from './directory.js';
+import { eventSchema, normalizeEvent } from './planning.js';
 
 function parse(schema, value) {
   const result = schema.safeParse(value);
@@ -55,8 +61,15 @@ const projectSchema = z.object({
   start: date,
   fav: z.boolean(),
   members: z.array(z.string().uuid()).max(200),
+  permissions: z.record(z.string().uuid(), z.enum(ACCESS_LEVELS)).optional(),
   desc: z.string().max(10000),
-  milestones: z.array(z.object({ id, title: text.optional(), name: text.optional(), date, done: z.boolean().optional() })).max(100),
+  milestones: z
+    .array(
+      z
+        .object({ id, title: text.optional(), name: text.optional(), date: date.refine(value => value !== null), done: z.boolean().optional() })
+        .refine(m => (m.name || m.title || '').trim().length > 0),
+    )
+    .max(100),
   last: number,
   seq: z.number().int().min(0).optional(),
   archived: z.boolean().optional(),
@@ -84,7 +97,10 @@ const taskSchema = z.object({
   start: date,
   labels: z.array(z.string().regex(/^[a-z0-9_-]{1,40}$/)).max(50),
   subtasks: z.array(subtaskSchema).max(200),
-  attachments: z.array(z.unknown()).max(0),
+  attachments: z
+    .array(z.unknown())
+    .max(500)
+    .transform(() => []),
   deps: z.array(id).max(100),
   desc: rich,
   estimate: z.union([z.string().max(30), number, z.null()]),
@@ -92,7 +108,7 @@ const taskSchema = z.object({
   updated: number,
   order: number,
   fav: z.boolean(),
-  recur: z.null(),
+  recur: z.enum(RECURRENCE).nullable(),
   archived: z.boolean().optional(),
   completedAt: number.nullable().optional(),
   archivedAt: number.nullable().optional(),
@@ -133,17 +149,17 @@ const viewSchema = z.object({
   filters,
   settings: viewPreferences.optional(),
 });
-const tables = { project: 'projects', task: 'tasks', savedView: 'saved_views' };
-const schemas = { project: projectSchema, task: taskSchema, savedView: viewSchema };
+const tables = { project: 'projects', task: 'tasks', savedView: 'saved_views', event: 'calendar_events' };
+const schemas = { project: projectSchema, task: taskSchema, savedView: viewSchema, event: eventSchema };
 const batch = z
   .object({
     revision: z.number().int().min(0),
     mutationId: z.string().uuid(),
-    operations: z.array(z.object({ entity: z.enum(['project', 'task', 'savedView']), id, value: z.unknown().nullable() }).strict()).max(500),
+    operations: z.array(z.object({ entity: z.enum(['project', 'task', 'savedView', 'event']), id, value: z.unknown().nullable() }).strict()).max(500),
     preferences: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
-const canRead = (project, user, role) => project && (!project.private || ['owner', 'admin'].includes(role) || project.members.includes(user));
+const canRead = canReadProject;
 
 function safePreferences(value) {
   if (JSON.stringify(value).length > 131072) fail(400, 'Pengaturan tampilan terlalu besar.');
@@ -162,13 +178,33 @@ function safePreferences(value) {
         views: z.record(z.string().max(150), viewPreferences).optional(),
         collapsed: z.boolean().optional(),
         projectOrder: z.array(id).max(5000).optional(),
+        favorites: z
+          .object({ tasks: z.array(id).max(5000), projects: z.array(id).max(5000) })
+          .strict()
+          .optional(),
+        notifPrefs: z
+          .object({
+            email_mention: z.boolean().optional(),
+            email_assign: z.boolean().optional(),
+            email_comment: z.boolean().optional(),
+            email_status: z.boolean().optional(),
+            email_due: z.boolean().optional(),
+            email_digest: z.boolean().optional(),
+            push_mention: z.boolean().optional(),
+            push_assign: z.boolean().optional(),
+            push_comment: z.boolean().optional(),
+            push_due: z.boolean().optional(),
+            push_status: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
     value,
   );
 }
 async function snapshot(db, ws, user, role) {
-  const projects = (await db.query('SELECT data FROM projects WHERE workspace_id=$1 ORDER BY id', [ws])).rows
+  let projects = (await db.query('SELECT data FROM projects WHERE workspace_id=$1 ORDER BY id', [ws])).rows
     .map(row => row.data)
     .filter(project => canRead(project, user, role));
   const ids = projects.map(project => project.id);
@@ -177,27 +213,36 @@ async function snapshot(db, ws, user, role) {
       `SELECT
     coalesce((SELECT jsonb_agg(data ORDER BY id) FROM tasks WHERE workspace_id=$1 AND project_id=ANY($2::text[])),'[]') AS tasks,
     coalesce((SELECT jsonb_agg(data ORDER BY id) FROM saved_views WHERE workspace_id=$1 AND project_id=ANY($2::text[])),'[]') AS views,
+    coalesce((SELECT jsonb_agg(data ORDER BY id) FROM calendar_events WHERE workspace_id=$1 AND project_id=ANY($2::text[])),'[]') AS events,
     coalesce((SELECT revision FROM content_versions WHERE workspace_id=$1),0) AS revision,
     coalesce((SELECT data FROM workspace_preferences WHERE workspace_id=$1 AND user_id=$3),'{}') AS preferences,
     coalesce((SELECT jsonb_agg(to_jsonb(a)) FROM (SELECT * FROM content_activity WHERE workspace_id=$1 AND project_id=ANY($2::text[]) ORDER BY at DESC LIMIT 200) a),'[]') AS activities`,
       [ws, ids, user],
     )
   ).rows[0];
+  const collaboration = await collaborationSnapshot(db, ws, user, ids);
+  const directory = await workspaceDirectory(db, ws, user, role, projects);
+  const favorites = row.preferences.favorites || { projects: projects.filter(p => p.fav).map(p => p.id), tasks: row.tasks.filter(t => t.fav).map(t => t.id) };
+  projects = projects.map(p => ({ ...p, fav: favorites.projects.includes(p.id) }));
   return {
     revision: row.revision,
     projects,
-    tasks: row.tasks,
+    tasks: row.tasks.map(task => ({ ...task, fav: favorites.tasks.includes(task.id), attachments: collaboration.files.filter(file => file.task === task.id) })),
+    events: row.events,
+    directory,
     savedViews: row.views,
     preferences: row.preferences,
     activity: row.activities.map(a => ({ id: a.id, by: a.actor_id, verb: a.verb, task: a.task_id, project: a.project_id, at: +new Date(a.at), extra: '' })),
+    ...collaboration,
   };
 }
 export function registerContent(app, pool, authenticated) {
   app.get('/api/workspaces/:ws/content', authenticated, async (req, res) => {
     const result = await transaction(pool, async db => {
       parse(z.string().uuid(), req.params.ws);
-      await db.query('SELECT id FROM workspaces WHERE id=$1 FOR SHARE', [req.params.ws]);
+      await db.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [req.params.ws]);
       const role = await membership(db, req.params.ws, req.session.user_id);
+      await dueReminders(db, req.params.ws);
       return snapshot(db, req.params.ws, req.session.user_id, role);
     });
     res.json(result);
@@ -209,7 +254,7 @@ export function registerContent(app, pool, authenticated) {
     await limit(pool, `content:${user}`, 300, 60);
     const hash = digest(JSON.stringify(input));
     const result = await transaction(pool, async db => {
-      const role = await membership(db, ws, user, ['owner', 'admin', 'member'], true);
+      const role = await membership(db, ws, user, ['owner', 'admin', 'member', 'guest'], true);
       const previous = await db.query('SELECT digest FROM content_mutations WHERE workspace_id=$1 AND user_id=$2 AND id=$3', [ws, user, input.mutationId]);
       if (previous.rowCount) {
         if (previous.rows[0].digest !== hash) fail(409, 'ID perubahan sudah dipakai. Muat ulang data.');
@@ -221,17 +266,22 @@ export function registerContent(app, pool, authenticated) {
         fail(409, 'Data telah diubah anggota lain. Muat data terbaru sebelum melanjutkan; perubahan Anda belum disimpan.');
       if (new Set(input.operations.map(op => op.entity + ':' + op.id)).size !== input.operations.length) fail(400, 'Perubahan ganda tidak valid.');
       if (input.operations.length) {
-        const active = (await db.query('SELECT user_id FROM memberships WHERE workspace_id=$1 AND active', [ws])).rows.map(row => row.user_id);
+        const activeRoles = new Map(
+          (await db.query('SELECT user_id,role FROM memberships WHERE workspace_id=$1 AND active', [ws])).rows.map(row => [row.user_id, row.role]),
+        );
+        const active = [...activeRoles.keys()];
         const teams = (await db.query('SELECT id FROM teams WHERE workspace_id=$1', [ws])).rows.map(row => row.id);
         const projects = new Map((await db.query('SELECT data FROM projects WHERE workspace_id=$1', [ws])).rows.map(row => [row.data.id, row.data]));
-        const checkProject = pid => {
+        const checkProject = (pid, action = 'read') => {
           const p = projects.get(pid);
           if (!canRead(p, user, role)) fail(404, 'Proyek tidak ditemukan atau tidak dapat diakses.');
+          if (!projectAllows(p, user, role, action)) fail(403, 'Anda tidak memiliki izin untuk mengubah konten proyek ini.');
           return p;
         };
-        const manager = project => ['owner', 'admin'].includes(role) || project.lead === user;
+        const manager = project => projectAllows(project, user, role, 'manage');
         const ops = [...input.operations].sort((a, b) => {
-          const rank = op => (op.value === null ? { savedView: 3, task: 4, project: 5 }[op.entity] : { project: 0, task: 1, savedView: 2 }[op.entity]);
+          const rank = op =>
+            op.value === null ? { savedView: 3, event: 3, task: 4, project: 5 }[op.entity] : { project: 0, task: 1, savedView: 2, event: 2 }[op.entity];
           return rank(a) - rank(b);
         });
         for (const op of ops) {
@@ -239,7 +289,7 @@ export function registerContent(app, pool, authenticated) {
           const existing = (await db.query(`SELECT data FROM ${table} WHERE workspace_id=$1 AND id=$2`, [ws, op.id])).rows[0]?.data;
           if (op.value === null) {
             if (!existing) continue;
-            const project = checkProject(op.entity === 'project' ? op.id : existing.project);
+            const project = checkProject(op.entity === 'project' ? op.id : existing.project, 'write');
             if (op.entity === 'project' && !manager(project)) fail(403, 'Hanya pemilik proyek atau admin yang dapat menghapus proyek.');
             await db.query(`DELETE FROM ${table} WHERE workspace_id=$1 AND id=$2`, [ws, op.id]);
             await db.query('INSERT INTO content_activity(id,workspace_id,actor_id,project_id,task_id,verb) VALUES ($1,$2,$3,$4,$5,$6)', [
@@ -248,30 +298,40 @@ export function registerContent(app, pool, authenticated) {
               user,
               project.id,
               op.entity === 'task' ? op.id : null,
-              op.entity === 'task' ? 'deleted' : 'deleted project',
+              op.entity === 'task' ? 'deleted' : op.entity === 'event' ? 'deleted calendar event' : 'deleted project',
             ]);
             if (op.entity === 'project') projects.delete(op.id);
             continue;
           }
-          const value = parse(schemas[op.entity], op.value);
+          let value = parse(schemas[op.entity], op.value);
           if (value.id !== op.id) fail(400, 'ID perubahan tidak cocok.');
           let project;
           if (op.entity === 'project') {
+            value.permissions ??= existing?.permissions || {};
             if (existing) {
-              checkProject(op.id);
+              checkProject(op.id, 'write');
               if (Boolean(value.archived) !== Boolean(existing.archived) && !manager(existing))
                 fail(403, 'Hanya pemilik proyek atau admin yang dapat mengarsipkan proyek.');
               if (
                 !manager(existing) &&
                 (value.lead !== existing.lead ||
                   JSON.stringify(value.members) !== JSON.stringify(existing.members) ||
+                  [...new Set([...Object.keys(value.permissions), ...Object.keys(existing.permissions || {})])].some(
+                    id => value.permissions[id] !== existing.permissions?.[id],
+                  ) ||
                   Boolean(value.private) !== Boolean(existing.private))
               )
                 fail(403, 'Hanya pemilik proyek atau admin yang dapat mengubah akses proyek.');
             } else {
+              const policy = (await db.query('SELECT settings FROM workspaces WHERE id=$1', [ws])).rows[0].settings;
+              if (role === 'guest' || (role === 'member' && policy.membersCanCreateProjects === false))
+                fail(403, 'Anda tidak diizinkan membuat proyek di workspace ini.');
               value.lead ||= user;
               value.members = [...new Set([...value.members, user, value.lead])];
             }
+            if (Object.keys(value.permissions).some(id => !value.members.includes(id))) fail(400, 'Izin proyek hanya boleh diberikan kepada anggota proyek.');
+            if (value.lead && activeRoles.get(value.lead) === 'guest') fail(400, 'Lead proyek harus anggota internal.');
+            if (new Set(value.milestones.map(m => m.id)).size !== value.milestones.length) fail(400, 'ID milestone harus unik.');
             if (
               value.members.some(id => !active.includes(id) && !existing?.members.includes(id)) ||
               (value.lead && value.lead !== existing?.lead && !active.includes(value.lead)) ||
@@ -288,24 +348,42 @@ export function registerContent(app, pool, authenticated) {
             projects.set(op.id, value);
             project = value;
           } else {
-            if (existing) checkProject(existing.project);
-            project = checkProject(value.project);
+            if (existing) checkProject(existing.project, 'write');
+            project = checkProject(value.project, 'write');
             if (op.entity === 'task') {
               if (
                 (value.assignee && value.assignee !== existing?.assignee && !active.includes(value.assignee)) ||
-                value.subtasks.some(s => s.assignee && !active.includes(s.assignee))
+                value.subtasks.some(s => s.assignee && s.assignee !== existing?.subtasks.find(old => old.id === s.id)?.assignee && !active.includes(s.assignee))
               )
                 fail(400, 'Assignee harus anggota aktif workspace.');
               if (new Set(value.subtasks.map(s => s.id)).size !== value.subtasks.length) fail(400, 'ID subtask harus unik.');
               if (value.start && value.due && value.start > value.due) fail(400, 'Tanggal mulai harus sebelum deadline.');
+              if (value.recur && !value.due) fail(400, 'Task berulang harus memiliki deadline.');
               if (!value.key.startsWith(project.key + '-')) fail(400, 'Nomor task tidak sesuai proyek.');
+              const changedAssignees = [
+                ...(value.assignee && value.assignee !== existing?.assignee ? [value.assignee] : []),
+                ...value.subtasks.filter(s => s.assignee && s.assignee !== existing?.subtasks.find(old => old.id === s.id)?.assignee).map(s => s.assignee),
+              ];
+              if (changedAssignees.some(id => !canRead(project, id, activeRoles.get(id)))) fail(400, 'Assignee harus memiliki akses ke proyek.');
               value.created = existing?.created || Date.now();
               value.updated = Date.now();
+            }
+            if (op.entity === 'event') {
+              value = normalizeEvent(value, existing, user);
+              if (
+                new Set(value.attendees).size !== value.attendees.length ||
+                value.attendees.some(id => !active.includes(id) || !canRead(project, id, activeRoles.get(id)))
+              )
+                fail(400, 'Peserta event harus anggota aktif yang dapat mengakses proyek.');
             }
             await db.query(
               `INSERT INTO ${table}(workspace_id,id,project_id,data) VALUES ($1,$2,$3,$4) ON CONFLICT(workspace_id,id) DO UPDATE SET project_id=EXCLUDED.project_id,data=EXCLUDED.data`,
               [ws, op.id, value.project, value],
             );
+          }
+          if (op.entity === 'task') {
+            if (existing && existing.project !== value.project) await taskResourcesMoved(db, ws, value.id, value.project);
+            await taskChanged(db, { workspace: ws, user, project, before: existing, value, mutation: input.mutationId });
           }
           if (op.entity !== 'savedView')
             await db.query('INSERT INTO content_activity(id,workspace_id,actor_id,project_id,task_id,verb) VALUES ($1,$2,$3,$4,$5,$6)', [
@@ -314,7 +392,17 @@ export function registerContent(app, pool, authenticated) {
               user,
               project.id,
               op.entity === 'task' ? op.id : null,
-              op.entity === 'project' ? (existing ? 'updated project' : 'created project') : existing ? 'updated' : 'created',
+              op.entity === 'project'
+                ? existing
+                  ? 'updated project'
+                  : 'created project'
+                : op.entity === 'event'
+                  ? existing
+                    ? 'updated calendar event'
+                    : 'created calendar event'
+                  : existing
+                    ? 'updated'
+                    : 'created',
             ]);
         }
         // Validate dependencies after the whole batch, including cross-task deletes.

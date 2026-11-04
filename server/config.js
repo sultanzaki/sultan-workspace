@@ -26,8 +26,10 @@ export function readConfig(env = process.env) {
         .min(0)
         .max(5)
         .default(serverless ? 1 : 0),
-      MAIL_TRANSPORT: z.enum(['smtp', 'file', 'disabled']).optional(),
+      MAIL_TRANSPORT: z.enum(['resend', 'smtp', 'file', 'disabled']).optional(),
       MAIL_FROM: z.string().email().default('workspace@localhost.test'),
+      RESEND_API_KEY: z.string().min(1).optional(),
+      RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
       SMTP_HOST: z.string().optional(),
       SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
       SMTP_SECURE: z.enum(['true', 'false']).default('false'),
@@ -44,6 +46,13 @@ export function readConfig(env = process.env) {
         .default(serverless ? 2 : 10),
       CRON_SECRET: z.string().min(32).optional(),
       BOOTSTRAP_TOKEN: z.string().min(32).max(256).optional(),
+      AUTH_ENCRYPTION_KEY: z.preprocess(
+        value => (value === '' ? undefined : value),
+        z
+          .string()
+          .refine(value => /^[A-Za-z0-9+/]{43}=$/.test(value) && Buffer.from(value, 'base64').length === 32)
+          .optional(),
+      ),
     })
     .safeParse(env);
   if (!result.success) configError('CONFIG_INVALID', 'Invalid environment configuration', [...new Set(result.error.issues.map(issue => issue.path.join('.')))]);
@@ -55,14 +64,17 @@ export function readConfig(env = process.env) {
   if (!['postgres:', 'postgresql:'].includes(database.protocol))
     configError('DATABASE_URL_INVALID', 'DATABASE_URL must be a PostgreSQL connection string', ['DATABASE_URL']);
   config.serverless = serverless;
-  config.MAIL_TRANSPORT ??= config.SMTP_HOST ? 'smtp' : config.NODE_ENV === 'production' ? 'disabled' : 'file';
+  config.MAIL_TRANSPORT ??= config.RESEND_API_KEY ? 'resend' : config.SMTP_HOST ? 'smtp' : config.NODE_ENV === 'production' ? 'disabled' : 'file';
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(database.hostname);
   if (config.NODE_ENV === 'production' && origin.protocol !== 'https:')
     configError('APP_ORIGIN_HTTPS_REQUIRED', 'Production requires an HTTPS APP_ORIGIN', ['APP_ORIGIN']);
   if (config.NODE_ENV === 'production' && config.MAIL_TRANSPORT === 'file')
     configError('MAIL_TRANSPORT_INVALID', 'Production cannot use file delivery; use SMTP or disabled', ['MAIL_TRANSPORT']);
+  if (config.MAIL_TRANSPORT === 'resend' && !config.RESEND_API_KEY) configError('RESEND_KEY_REQUIRED', 'RESEND_API_KEY is required', ['RESEND_API_KEY']);
+  if (config.NODE_ENV === 'production' && ['smtp', 'resend'].includes(config.MAIL_TRANSPORT) && config.MAIL_FROM === 'workspace@localhost.test')
+    configError('MAIL_FROM_REQUIRED', 'Set MAIL_FROM to a verified sender address', ['MAIL_FROM']);
   if (config.MAIL_TRANSPORT === 'smtp' && !config.SMTP_HOST) configError('SMTP_HOST_REQUIRED', 'SMTP_HOST is required', ['SMTP_HOST']);
-  if (Boolean(config.SMTP_USER) !== Boolean(config.SMTP_PASSWORD))
+  if (config.MAIL_TRANSPORT === 'smtp' && Boolean(config.SMTP_USER) !== Boolean(config.SMTP_PASSWORD))
     configError('SMTP_CREDENTIALS_INCOMPLETE', 'SMTP_USER and SMTP_PASSWORD must be supplied together', ['SMTP_USER', 'SMTP_PASSWORD']);
   // Explicit verification prevents connection-string sslmode options downgrading TLS.
   for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert', 'options']) database.searchParams.delete(key);
