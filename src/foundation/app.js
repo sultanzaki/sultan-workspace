@@ -91,6 +91,7 @@ async function loadWorkspace(id = state.workspace?.id || new URLSearchParams(loc
   state.mail = [];
   if (!selected) return;
   state.workspace = await api(`/workspaces/${selected.id}`);
+  if (!managementView) state.content = await api(`/workspaces/${selected.id}/content`);
   if (canManage() && managementView) {
     [state.invitations, state.audit, state.mail] = await Promise.all(
       ['invitations', 'audit', 'mail-status'].map(part => api(`/workspaces/${selected.id}/${part}`)),
@@ -171,7 +172,7 @@ function invitationContent() {
 function render() {
   if (state.user && state.workspace && state.view === 'workspace' && !managementView) {
     root.innerHTML = '<main class="foundation-main" role="status">Membuka workspace…</main>';
-    setWorkspaceSession({ user: state.user, workspace: state.workspace, workspaces: state.workspaces, csrfToken: state.csrfToken });
+    setWorkspaceSession({ user: state.user, workspace: state.workspace, workspaces: state.workspaces, csrfToken: state.csrfToken, content: state.content });
     document.body.classList.remove('foundation-mode');
     void import('../native-workspace.js').catch(() => {
       root.innerHTML =

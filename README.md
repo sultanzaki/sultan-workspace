@@ -1,4 +1,4 @@
-# Gr8r Studio — fondasi aplikasi tim
+# Gr8r Studio — workspace tim
 
 Aplikasi tim dengan **login native dan PostgreSQL**, siap dikoneksikan ke **Supabase Database tanpa Supabase Auth**. Frontend menggunakan JavaScript ES Modules/CSS/Vite; backend menggunakan Node.js/Express.
 
@@ -6,6 +6,9 @@ Fondasi yang sudah diimplementasikan:
 
 - Login/logout, cookie sesi aman, reset password, dan akun baru melalui undangan.
 - Workspace, role owner/admin/member, aktivasi anggota, tim, dan audit administrasi.
+- Proyek dan task bersama: CRUD, assignee, status, prioritas, tanggal, label, subtask, dependency, arsip, dan pemulihan.
+- Board/List/Table/Calendar/Timeline memakai data database yang sama, termasuk drag-and-drop, pencarian, filter, sorting, dan saved views.
+- Deteksi konflik edit, retry penyimpanan, serta pembatasan akses proyek privat di backend.
 - Migrasi PostgreSQL dalam schema privat, antrean email dengan retry, serta validasi dan izin di backend.
 - Tes API dengan PostgreSQL sungguhan, browser tests, dan CI.
 
@@ -31,7 +34,9 @@ Untuk membuat tabel tanpa terminal, buka **Supabase → SQL Editor → New query
 
 Setelah login, tampilan workspace asli tersedia kembali, termasuk Projects, Tasks, board/list/table/calendar/timeline/files. Pengelolaan akun dan anggota tersedia melalui **Kelola workspace**.
 
-**Akun, anggota, dan tim memakai database; proyek/task/komentar masih disimpan lokal di browser dan belum tersinkron ke tim.** Penanda ini ditampilkan pada UI. Data lokal dipisahkan per akun dan workspace, tanpa memuat data demo sebagai data tim. Penyimpanan isi file dan beberapa simulasi akun asal belum tersedia; integrasi domain ke backend adalah tahap berikutnya.
+**Proyek, task, dan saved views sudah tersimpan di PostgreSQL dan dibagikan sesuai izin workspace/proyek.** Preferensi tampilan disimpan per akun. Perubahan anggota lain dimuat otomatis sekitar setiap 10 detik saat halaman aktif dan tidak sedang diedit. Komentar, upload isi file, dan notifikasi kolaborasi masih tahap berikutnya; email tetap opsional.
+
+**Upgrade dari versi sebelumnya:** sebelum merge/deploy versi ini, jalankan ulang seluruh [file migrasi SQL terbaru](docs/supabase-migration.sql) di Supabase SQL Editor. Migrasi lama dilewati; `002_project_content.sql` menambahkan tabel proyek/task tanpa menghapus akun. Data browser lama dapat dipindahkan lewat tombol **Impor data lokal lama** pada akun dan browser asal; data demo tidak diimpor otomatis.
 
 ```bash
 npm run lint

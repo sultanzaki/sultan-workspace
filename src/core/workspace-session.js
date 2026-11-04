@@ -23,10 +23,18 @@ export function workspaceData(value, saved) {
     invoices: [],
     tfa: false,
   };
-  // Only local project content/preferences may be restored; identity and roles
-  // are always refreshed from the authenticated API, never localStorage.
+  // Server content takes precedence over older local drafts. Identity and roles
+  // always come from the authenticated API.
   for (const key of ['projects', 'tasks', 'comments', 'activity', 'notifs', 'files', 'events', 'projOrder', 'savedViews', 'recentSearches']) {
-    if (Array.isArray(saved?.[key])) data[key] = saved[key];
+    const source = value.content || saved;
+    if (Array.isArray(source?.[key])) data[key] = source[key];
+  }
+  if (value.content) {
+    const ids = data.projects.map(p => p.id);
+    data.projOrder = [
+      ...(value.content.preferences?.projectOrder || []).filter(id => ids.includes(id)),
+      ...ids.filter(id => !(value.content.preferences?.projectOrder || []).includes(id)),
+    ];
   }
   const roles = { owner: 'Owner', admin: 'Admin', member: 'Member' };
   data.ws = { id: workspace.id, name: workspace.name, url: workspace.id, c: '#4B5BD6', brand: true };

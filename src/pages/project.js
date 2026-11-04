@@ -43,6 +43,7 @@ export function pageProject() {
       const k = 'sv:' + sv.id;
       if (!S.views[k]) {
         viewOf(k);
+        if (sv.settings) Object.assign(S.views[k], JSON.parse(JSON.stringify(sv.settings)));
         S.views[k].filters = JSON.parse(JSON.stringify(sv.filters));
       }
       body = taskViewBody(sv.type, applyView(ts, viewOf(k)), k, p);

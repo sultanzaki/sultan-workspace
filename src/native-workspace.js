@@ -4,13 +4,178 @@ import { A, IN } from './actions/actions.js';
 import { render } from './shell/render.js';
 import { toast } from './ui/toast.js';
 import { readApiResponse } from './foundation/http.js';
-import { S, visibleProjects } from './core/store.js';
+import { S, proj, save, visibleProjects } from './core/store.js';
+import { openModal } from './overlays/modals.js';
+import { DRAG } from './actions/drag-drop.js';
+import { createContentSync } from './core/content-sync.js';
+import { localWorkspaceKey } from './core/workspace-session.js';
 
 const session = getWorkspaceSession();
+session.contentRevision = session.content.revision;
+try {
+  session.draftBackup = JSON.parse(localStorage.getItem(localWorkspaceKey(session) + '.unsaved'));
+} catch {
+  /* A damaged browser backup must not stop server data from loading. */
+}
+let pointerEditing = false,
+  deferredRender = false;
+function renderSynced() {
+  if (DRAG || pointerEditing || document.activeElement?.matches('input,textarea,[contenteditable=true]')) deferredRender = true;
+  else {
+    deferredRender = false;
+    render();
+  }
+}
+document.addEventListener('focusout', () => {
+  if (deferredRender) queueMicrotask(renderSynced);
+});
+document.addEventListener('pointerdown', event => {
+  if (event.target.closest?.('[draggable=true],[data-bar],[data-rsz]')) pointerEditing = true;
+});
+function endPointerEdit() {
+  pointerEditing = false;
+  if (deferredRender) {
+    deferredRender = false;
+    queueMicrotask(renderSynced);
+  }
+}
+window.addEventListener('pointerup', endPointerEdit);
+document.addEventListener('dragend', endPointerEdit);
+document.addEventListener('drop', endPointerEdit);
+const sync = createContentSync({
+  initial: session.content,
+  capture: () => ({
+    projects: S.data.projects,
+    tasks: S.data.tasks,
+    savedViews: S.data.savedViews,
+    preferences: { prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed, projectOrder: S.data.projOrder },
+  }),
+  request: async (method, body) => {
+    try {
+      return await readApiResponse(
+        await fetch(`/api/workspaces/${session.workspace.id}/content`, {
+          method,
+          credentials: 'same-origin',
+          headers: method === 'POST' ? { 'Content-Type': 'application/json', 'X-CSRF-Token': session.csrfToken } : {},
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof TypeError && !error.status) throw new Error('Koneksi terputus. Perubahan belum tersimpan. Coba simpan lagi.');
+      throw error;
+    }
+  },
+  apply: content => {
+    session.contentRevision = content.revision;
+    for (const key of ['projects', 'tasks', 'savedViews', 'activity']) S.data[key] = content[key];
+    const ids = content.projects.map(p => p.id),
+      order = content.preferences.projectOrder || [];
+    S.data.projOrder = [...order.filter(id => ids.includes(id)), ...ids.filter(id => !order.includes(id))];
+    if (content.preferences.views) S.views = content.preferences.views;
+    if (content.preferences.prefs) Object.assign(S.prefs, content.preferences.prefs, { name: session.user.name });
+    renderSynced();
+  },
+  status: (state, message) => {
+    const previous = session.syncState;
+    session.syncState = state;
+    session.syncMessage = message;
+    const element = document.querySelector('.native-sync-status');
+    if (['error', 'conflict'].includes(state) || ['error', 'conflict'].includes(previous)) renderSynced();
+    if (element)
+      element.textContent =
+        message ||
+        { saving: 'Menyimpan ke database…', saved: 'Tersimpan di database', conflict: 'Konflik perubahan', error: 'Perubahan belum tersimpan' }[state];
+  },
+  backup: content => {
+    session.draftBackup = JSON.parse(JSON.stringify(content));
+    try {
+      localStorage.setItem(localWorkspaceKey(session) + '.unsaved', JSON.stringify(content));
+    } catch {
+      /* Keep the unsaved content in memory too. */
+    }
+  },
+});
+session.scheduleSave = sync.schedule;
+session.flush = sync.flush;
+session.hasPendingChanges = sync.isDirty;
+session.onRender = () => {
+  if (sync.hasChanges()) sync.schedule();
+};
+let localDraft;
+try {
+  localDraft = JSON.parse(localStorage.getItem(localWorkspaceKey(session)))?.data;
+} catch {
+  /* No valid previous local draft. */
+}
+session.hasLocalDraft = !!localDraft?.projects?.some(project => !S.data.projects.some(current => current.id === project.id));
+A.nativeImportLocal = () => {
+  if (
+    !localDraft ||
+    !window.confirm(
+      'Impor proyek dan task lokal akun ini ke database bersama? Data database yang sudah ada tidak akan ditimpa. File dan komentar tidak ikut diimpor.',
+    )
+  )
+    return;
+  for (const key of ['projects', 'tasks', 'savedViews']) {
+    const ids = new Set(S.data[key].map(item => item.id));
+    S.data[key].push(
+      ...(localDraft[key] || []).filter(item => !ids.has(item.id)).map(item => (key === 'tasks' ? { ...item, attachments: [], recur: null } : item)),
+    );
+  }
+  for (const project of S.data.projects)
+    project.seq = Math.max(
+      project.seq || 200,
+      ...S.data.tasks.filter(task => task.project === project.id).map(task => Number(task.key.split('-').at(-1)) || 200),
+    );
+  S.data.projOrder = [...new Set([...S.data.projOrder, ...S.data.projects.map(project => project.id)])];
+  session.hasLocalDraft = false;
+  sync.schedule();
+  render();
+  void sync.flush().catch(() => {});
+};
+A.nativeDownloadDraft = () => {
+  const data =
+    sync.hasUnsavedContent() || !session.draftBackup ? { projects: S.data.projects, tasks: S.data.tasks, savedViews: S.data.savedViews } : session.draftBackup;
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'workspace-draft.json';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+A.nativeRetry = () => {
+  void sync.retry().catch(() => {});
+};
+A.nativeRefresh = () => {
+  void sync.refresh(true).catch(error => toast(error.message, { kind: 'err' }));
+};
+sync.schedule();
+setInterval(() => {
+  if (document.hidden || DRAG || pointerEditing || document.activeElement?.matches('input,textarea,[contenteditable=true]')) return;
+  void sync.refresh().catch(() => {});
+}, 10000);
+window.addEventListener('beforeunload', event => {
+  if (sync.hasUnsavedContent()) {
+    event.preventDefault();
+    event.returnValue = '';
+  }
+});
 const management = () => location.assign(`/?manage=1&workspace=${encodeURIComponent(session.workspace.id)}`);
 const unavailable = () => toast('Fitur ini belum terhubung ke layanan akun. Gunakan Kelola workspace untuk pengaturan anggota.', { kind: 'info' });
 const noSharedFiles = () => toast('Penyimpanan isi file belum terhubung ke server. File belum diunggah.', { kind: 'info' });
 A.nativeManage = management;
+A.share = el => openModal({ type: 'share', id: el.dataset.id });
+IN.nativeProjectPrivate = el => {
+  proj(el.dataset.id).private = el.checked;
+  save();
+  render();
+};
+IN.nativeProjectMember = el => {
+  const project = proj(el.dataset.id);
+  project.members = el.checked ? [...new Set([...project.members, el.dataset.mid])] : project.members.filter(id => id !== el.dataset.mid);
+  save();
+  render();
+};
 const newTask = A.newTask;
 A.newTask = el => {
   if (!visibleProjects().length) {
@@ -21,7 +186,13 @@ A.newTask = el => {
   newTask(el);
 };
 const pick = A.popPick;
-A.popPick = el => (S.ui.pop?.type === 'role' ? management() : pick(el));
+A.popPick = el => {
+  if (S.ui.pop?.type === 'recur') {
+    toast('Task berulang akan diaktifkan pada fase otomatisasi.', { kind: 'info' });
+    return;
+  }
+  return S.ui.pop?.type === 'role' ? management() : pick(el);
+};
 A.switchWs = el => location.assign(`/?workspace=${encodeURIComponent(el.dataset.v)}`);
 for (const key of [
   'newWorkspace',
@@ -48,7 +219,6 @@ for (const key of [
   'disable2fa',
   'changePlan',
   'copyLink',
-  'share',
   'shareAdd',
   'shareInvite',
   'resetDemo',
@@ -62,6 +232,8 @@ for (const key of [
   'doForgot',
   'resend',
   'auth',
+  'postComment',
+  'delComment',
 ])
   A[key] = unavailable;
 IN.sharePerm = unavailable;
@@ -70,6 +242,7 @@ IN.uploadFiles = noSharedFiles;
 IN.formFiles = noSharedFiles;
 A.signOut = async () => {
   try {
+    await sync.flush();
     const response = await fetch('/api/auth/logout', {
       method: 'POST',
       credentials: 'same-origin',
@@ -94,7 +267,7 @@ async function checkSession() {
       else session.csrfToken = identity.csrfToken;
     }
   } catch {
-    /* Keep the explicit local-data notice visible during network loss. */
+    /* Retry session verification on the next visibility/timer check. */
   }
 }
 document.addEventListener('visibilitychange', () => {

@@ -34,15 +34,16 @@ export function load() {
   return null;
 }
 export const saved = load();
+const serverPreferences = workspaceSession?.content?.preferences;
 export const S = {
   data: workspaceSession ? workspaceData(workspaceSession, saved?.data) : saved?.data || seed(),
   prefs: Object.assign(
     {},
     DEFAULT_PREFS,
-    saved?.prefs || {},
+    serverPreferences?.prefs || saved?.prefs || {},
     workspaceSession ? { name: workspaceSession.user.name, title: workspaceSession.workspace.role } : {},
   ),
-  views: saved?.views || {},
+  views: serverPreferences?.views || saved?.views || {},
   ui: {
     fx: {},
     auth: null,
@@ -91,6 +92,10 @@ export const S = {
 };
 export let _saveT;
 export function save() {
+  if (workspaceSession?.content) {
+    workspaceSession.scheduleSave?.();
+    return;
+  }
   clearTimeout(_saveT);
   _saveT = setTimeout(() => {
     try {
@@ -113,9 +118,9 @@ export const visibleProjects = () =>
     .projOrder.map(proj)
     .filter(Boolean)
     .filter(p => !p.archived);
-export const canSee = p => !!p && (!p.private || p.members.includes(D().me));
+export const canSee = p => !!p && (!p.private || p.members.includes(D().me) || ['owner', 'admin'].includes(workspaceSession?.workspace.role));
 export const tasksOf = pid => D().tasks.filter(t => t.project === pid && !t.archived);
-export const allTasks = () => D().tasks.filter(t => !t.archived && canSee(proj(t.project)));
+export const allTasks = () => D().tasks.filter(t => !t.archived && !proj(t.project)?.archived && canSee(proj(t.project)));
 export const isOver = t => t.due && t.status !== 'done' && diffD(parse(t.due), TODAY) < 0;
 export const commentsOf = tid => D().comments.filter(c => c.task === tid);
 export function progressOf(pid) {

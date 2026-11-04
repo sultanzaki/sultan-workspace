@@ -16,7 +16,7 @@ test('Vercel explicitly rewrites nested API routes into one function', async () 
   const config = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8'));
   assert.ok(config.functions['api/index.js']);
   assert.deepEqual(config.rewrites, [{ source: '/api/:path*', destination: '/api?__route=:path*' }]);
-  for (const path of ['health', 'auth/me', 'auth/setup', 'auth/login', 'workspaces/123/teams']) {
+  for (const path of ['health', 'auth/me', 'auth/setup', 'auth/login', 'workspaces/123/teams', 'workspaces/123/content']) {
     const request = { url: '/api?__route=' + encodeURIComponent(path) };
     assert.equal(restoreApiPath(request), true);
     assert.equal(request.url, '/api/' + path);
@@ -197,7 +197,7 @@ test('SQL Editor migrations and the Vercel function share the real database cont
       );
       assert.deepEqual(privileges.rows[0], { usage: false, create: false });
     }
-    assert.equal((await pool.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '1');
+    assert.equal((await pool.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '2');
     await bootstrap(pool, { email: 'vercel-owner@example.test', name: 'Vercel Owner', workspace: 'Vercel Workspace', password: 'vercel-test-password-123' });
   });
   await t.test('failed initialization recovers after migration and concurrent requests reuse one pool', async () => {
@@ -225,6 +225,9 @@ test('SQL Editor migrations and the Vercel function share the real database cont
     const identity = await me.json();
     assert.equal(identity.features.email, false);
     assert.equal(identity.workspaces[0].name, 'Vercel Workspace');
+    const content = await request(`/api/workspaces/${identity.workspaces[0].id}/content`, { cookie: cookie.split(';')[0] });
+    assert.equal(content.status, 200);
+    assert.deepEqual((await content.json()).projects, []);
     const invitation = await request(`/api/workspaces/${identity.workspaces[0].id}/invitations`, {
       method: 'POST',
       cookie: cookie.split(';')[0],

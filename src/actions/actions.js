@@ -129,10 +129,19 @@ export function confirmDlg(o) {
   openModal({ type: 'confirm', ...o });
 }
 export function snapshot() {
-  return JSON.stringify(S.data);
+  const session = getWorkspaceSession();
+  const data = JSON.stringify(S.data);
+  return session ? { data, revision: session.contentRevision } : data;
 }
 export function restore(snap) {
-  S.data = JSON.parse(snap);
+  if (typeof snap === 'object') {
+    const session = getWorkspaceSession();
+    if (session?.contentRevision !== snap.revision + 1 || session.hasPendingChanges()) {
+      toast('Data sudah berubah sejak tindakan ini. Gunakan Archive untuk memulihkan item, atau periksa data terbaru.', { kind: 'info' });
+      return;
+    }
+  }
+  S.data = JSON.parse(typeof snap === 'object' ? snap.data : snap);
   save();
   render();
 }
@@ -1034,6 +1043,7 @@ A.resetCols = el => {
 };
 IN.viewQ = el => {
   viewOf(el.dataset.key).q = el.value;
+  if (getWorkspaceSession()) save();
   render();
 };
 A.addFilter = el => {
@@ -1096,7 +1106,8 @@ A.saveViewSubmit = () => {
   const m = S.ui.modals[S.ui.modals.length - 1];
   const name = $('#sv-name').value.trim() || 'Untitled view';
   const type = $('#sv-type').value;
-  const sv = { id: uid('v'), project: m.pid, name, type, filters: JSON.parse(JSON.stringify(viewOf('p:' + m.pid).filters)) };
+  const settings = JSON.parse(JSON.stringify(viewOf('p:' + m.pid)));
+  const sv = { id: uid('v'), project: m.pid, name, type, filters: settings.filters, settings };
   D().savedViews.push(sv);
   save();
   S.ui.modals.pop();
@@ -1216,7 +1227,7 @@ A.clearProjFilters = () => {
   render();
 };
 A.newProject = () => {
-  S.ui.pform = { name: '', desc: '', icon: 'folder', color: 'indigo', team: me().team, lead: D().me, due: dOff(30), tmpl: 'blank' };
+  S.ui.pform = { name: '', desc: '', icon: 'folder', color: 'indigo', team: me().team, lead: D().me, due: dOff(30), tmpl: 'blank', private: false };
   S.ui.errors = {};
   S.ui.pop = null;
   openModal({ type: 'project' });
@@ -1224,9 +1235,22 @@ A.newProject = () => {
 A.editProject = el => {
   const p = proj(el.dataset.id);
   S.ui.pop = null;
-  S.ui.pform = { name: p.name, desc: p.desc, icon: p.icon, color: p.color, team: p.team, lead: p.lead, due: p.due, tmpl: 'blank' };
+  S.ui.pform = {
+    name: p.name,
+    desc: p.desc,
+    icon: p.icon,
+    color: p.color,
+    team: p.team,
+    lead: p.lead,
+    due: p.due,
+    private: !!p.private,
+    tmpl: 'blank',
+  };
   S.ui.errors = {};
   openModal({ type: 'project', edit: p.id });
+};
+IN.pformPrivate = el => {
+  S.ui.pform.private = el.checked;
 };
 IN.pform = el => {
   S.ui.pform[el.dataset.f] = el.value;
@@ -1276,6 +1300,7 @@ export function createProject(f, tmplId) {
     members: [...new Set([D().me, f.lead])],
     desc: f.desc || 'No description yet.',
     milestones: [],
+    private: !!f.private,
     last: 0,
   };
   D().projects.push(p);
@@ -1318,6 +1343,7 @@ A.submitProject = () => {
           team: f.team,
           lead: f.lead,
           due: f.due,
+          private: !!f.private,
           members: [...new Set([...p.members, f.lead])],
         }),
       )

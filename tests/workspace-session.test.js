@@ -42,3 +42,13 @@ test('local content is scoped separately to each account and workspace', () => {
   assert.notEqual(localWorkspaceKey(session), localWorkspaceKey({ ...session, workspace: { id: 'workspace-2' } }));
   assert.notEqual(localWorkspaceKey(session), 'gr8r.v2');
 });
+test('server content is authoritative even when the browser retains older project data', () => {
+  const data = workspaceData(
+    { ...session, content: { projects: [{ id: 'shared' }], tasks: [], preferences: { projectOrder: ['deleted', 'shared'] } } },
+    { projects: [{ id: 'local-only' }], tasks: [{ id: 'old-task' }], comments: [{ id: 'old-comment' }] },
+  );
+  assert.deepEqual(data.projects, [{ id: 'shared' }]);
+  assert.deepEqual(data.tasks, []);
+  assert.deepEqual(data.comments, []);
+  assert.deepEqual(data.projOrder, ['shared']);
+});

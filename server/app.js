@@ -8,6 +8,7 @@ import { transaction } from './db.js';
 import { queueMail } from './mail.js';
 import { createMaintenance } from './maintenance.js';
 import { bootstrap } from './bootstrap.js';
+import { registerContent } from './content.js';
 import {
   email,
   password,
@@ -70,6 +71,7 @@ export async function createApp(pool, config) {
     }
     next();
   });
+  app.use('/api/workspaces/:ws/content', express.json({ limit: '1mb' }));
   app.use(express.json({ limit: '32kb' }));
 
   function sessionToken(req) {
@@ -264,6 +266,7 @@ export async function createApp(pool, config) {
     res.clearCookie(cookieName, cookieOptions).json({ message: 'Password diperbarui. Silakan login kembali.' });
   });
 
+  registerContent(app, pool, authenticated);
   app.use('/api/workspaces', authenticated);
   app.post('/api/workspaces', async (req, res) => {
     await limit(pool, `workspace:${req.session.user_id}`, 10, 3600);
@@ -453,6 +456,8 @@ export async function createApp(pool, config) {
     if (error.type === 'entity.too.large') return res.status(413).json({ error: 'Permintaan terlalu besar.' });
     if (error.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON tidak valid.' });
     if (error.code === '23505') return res.status(409).json({ error: 'Data sudah ada atau sedang diproses. Muat ulang lalu coba lagi.' });
+    if (['42P01', '3F000'].includes(error.code))
+      return res.status(503).json({ error: 'Jalankan migrasi database terbaru untuk proyek dan task terlebih dahulu.' });
     // Never log request bodies, SQL parameters, connection strings, or raw tokens.
     console.error('API operation failed:', error.code || error.name);
     res.status(500).json({ error: 'Layanan belum dapat memproses permintaan. Coba lagi.' });

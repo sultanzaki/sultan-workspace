@@ -6,6 +6,7 @@ import { D, S, mem, pColor, proj, task, teamsList } from '../core/store.js';
 import { FT, av, filePrev, lbl, prPill, stPill } from '../ui/helpers.js';
 import { focusKey, render } from '../shell/render.js';
 import { teamModal } from '../features/teams.js';
+import { getWorkspaceSession } from '../core/workspace-session.js';
 
 export function openModal(m) {
   S.ui.modalOpeners = S.ui.modalOpeners || [];
@@ -167,6 +168,7 @@ export function projectModal(m, H) {
         .join('')}</select></div>
       <div class="field" style="flex:1;min-width:150px"><label class="label" for="p-due">Target date</label><input type="date" class="input" id="p-due" data-in="pform" data-f="due" value="${f.due || ''}"></div>
     </div>
+    <label class="row"><input type="checkbox" data-in="pformPrivate" ${f.private ? 'checked' : ''}>Private project (members and workspace admins only)</label>
     ${m.edit ? '' : `<div class="field"><span class="label">Template</span><div class="tmpls" role="radiogroup">${TEMPLATES.map(t => `<button type="button" role="radio" aria-checked="${f.tmpl === t.id}" class="opt ${f.tmpl === t.id ? 'on' : ''}" data-a="pformSet" data-f="tmpl" data-v="${t.id}" style="padding:10px">${ic(t.icon, 16)}<b style="font-size:12.5px">${t.name}</b><span>${t.tasks.length ? t.tasks.length + ' starter tasks' : t.desc}</span></button>`).join('')}</div></div>`}
   </form>
   <div class="modal-f"><span class="sp"></span><button class="btn btn-secondary" data-a="closeModal">Cancel</button><button class="btn btn-primary" data-a="submitProject">${m.edit ? 'Save changes' : 'Create project'}</button></div>`;
@@ -174,6 +176,23 @@ export function projectModal(m, H) {
 export const PERMS = ['Can view', 'Can comment', 'Can edit', 'Full access'];
 export function shareModal(m, H) {
   const p = proj(m.id);
+  const session = getWorkspaceSession();
+  if (session) {
+    const manager = ['owner', 'admin'].includes(session.workspace.role) || p.lead === session.user.id;
+    return `${H(`Akses proyek “${esc(p.name)}”`)}
+      <div class="modal-b">
+        <label class="row"><input type="checkbox" data-in="nativeProjectPrivate" data-id="${p.id}" ${p.private ? 'checked' : ''} ${manager ? '' : 'disabled'}>Proyek privat</label>
+        <p class="muted">${p.private ? 'Hanya anggota terpilih, owner, dan admin workspace yang dapat membuka proyek ini.' : 'Semua anggota workspace dapat membuka dan mengedit proyek ini.'}</p>
+        <div class="eyebrow">Anggota proyek</div>
+        ${D()
+          .members.filter(member => member.status === 'active')
+          .map(
+            member =>
+              `<label class="row" style="padding:8px 0"><input type="checkbox" data-in="nativeProjectMember" data-id="${p.id}" data-mid="${member.id}" ${p.members.includes(member.id) ? 'checked' : ''} ${manager && member.id !== p.lead ? '' : 'disabled'}>${av(member.id, 'sm', false)}<span class="grow">${esc(member.name)}</span><span class="faint">${member.id === p.lead ? 'Project lead' : esc(member.role)}</span></label>`,
+          )
+          .join('')}
+      </div><div class="modal-f"><span class="sp"></span><button class="btn btn-primary" data-a="closeModal">Selesai</button></div>`;
+  }
   p.perms = p.perms || {};
   p.access = p.access || 'workspace';
   return `${H(`Share “${esc(p.name)}”`)}

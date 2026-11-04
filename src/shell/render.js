@@ -11,6 +11,7 @@ import { tlAfter } from '../views/timeline.js';
 import { renderLayer } from '../overlays/drawer.js';
 import { placePop } from '../overlays/popovers.js';
 import { renderAuth } from '../pages/auth.js';
+import { getWorkspaceSession } from '../core/workspace-session.js';
 
 export const ROUTE_NAMES = {
   home: 'Home',
@@ -195,6 +196,7 @@ export function render() {
   afterRender();
 }
 export function afterRender() {
+  getWorkspaceSession()?.onRender?.();
   selectMenu.close();
   enhanceSelects();
   placePop();

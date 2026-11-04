@@ -4,6 +4,24 @@ import { testConfig } from '../database.js';
 import { readFile } from 'node:fs/promises';
 
 test.describe.configure({ mode: 'serial' });
+async function drag(page, source, target) {
+  await source.scrollIntoViewIfNeeded();
+  await target.scrollIntoViewIfNeeded();
+  const from = await source.boundingBox(),
+    to = await target.boundingBox();
+  const x = from.x + 5,
+    y = from.y + 5;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 10, y, { steps: 5 });
+  const viewport = page.viewportSize();
+  await page.mouse.move(
+    (Math.max(0, to.x) + Math.min(viewport.width, to.x + to.width)) / 2,
+    (Math.max(0, to.y) + Math.min(viewport.height, to.y + to.height)) / 2,
+    { steps: 10 },
+  );
+  await page.mouse.up();
+}
 
 async function mailToken(recipient, kind) {
   const pool = createPool(testConfig());
@@ -108,7 +126,9 @@ test('password recovery changes credentials and the old password stops working',
   await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
 });
 
-test('the original workspace, project views and local task editing remain accessible after native login', async ({ page }) => {
+test('all workspace views use shared database content across accounts after clearing browser storage', async ({ page }) => {
+  test.setTimeout(60000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
@@ -117,7 +137,7 @@ test('the original workspace, project views and local task editing remain access
   await page.getByRole('button', { name: 'Login', exact: true }).click();
   const nav = page.getByRole('navigation', { name: 'Main', exact: true });
   await expect(nav).toBeVisible();
-  await expect(page.getByText('Proyek dan task tersimpan di browser ini; belum tersinkron ke tim.')).toBeVisible();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
   await expect(page.getByText('Website Redesign')).toHaveCount(0);
   for (const route of [
     'overview',
@@ -146,22 +166,117 @@ test('the original workspace, project views and local task editing remain access
   await page.locator('.content [data-a="go"][data-tab="board"]').click();
   await page.locator('button[data-a="newTask"]').first().click();
   await page.getByLabel('Task name', { exact: true }).fill('Restored local task');
+  const today = await page.evaluate(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  await page.locator('[data-id="__form"][data-field="due"]').click();
+  await page.locator(`[data-a="popPick"][data-v="${today}"]`).first().click();
   await page.getByRole('button', { name: 'Create task', exact: true }).click();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await drag(page, page.locator('[data-drag-card]').first(), page.locator('[data-drop-col="progress"]'));
+  await expect(page.locator('[data-drop-col="progress"] [data-drag-card]')).toHaveCount(1);
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  let aborted = false;
+  await page.route('**/content', route => {
+    if (route.request().method() === 'POST' && !aborted) {
+      aborted = true;
+      return route.abort();
+    }
+    return route.continue();
+  });
+  await drag(page, page.locator('[data-drag-card]').first(), page.locator('[data-drop-col="review"]'));
+  await expect(page.locator('[data-drop-col="review"] [data-drag-card]')).toHaveCount(1);
+  await expect(page.locator('.native-sync-status')).toContainText('Perubahan belum tersimpan');
+  await page.getByRole('button', { name: 'Coba simpan lagi', exact: true }).click();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await page.unroute('**/content');
+  await page.locator('.content [data-tab="calendar"]').click();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  const target = await page
+    .locator('.cday:not(.out)[data-drop-day]')
+    .evaluateAll((elements, today) => elements.map(el => el.dataset.dropDay).find(day => day !== today), today);
+  await drag(page, page.locator('[data-drag-cal]').first(), page.locator(`[data-drop-day="${target}"]`));
+  await expect(page.locator(`[data-drop-day="${target}"] [data-drag-cal]`)).toHaveCount(1);
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
   await page.screenshot({ path: 'test-results/restored-workspace.png' });
   for (const tab of ['board', 'list', 'table', 'calendar', 'timeline', 'files', 'overview', 'activity']) {
     await page.locator(`.content [data-a="go"][data-tab="${tab}"]`).first().click();
     await expect(page.locator('.content')).not.toContainText('Something went wrong.');
   }
+  await page.locator('.content [data-tab="table"]').click();
+  await page.locator('th [data-f="title"]').click();
+  await page.locator('td[data-f="estimate"]').click();
+  await page.getByLabel('Estimate', { exact: true }).fill('5d');
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.getByLabel('Estimate', { exact: true })).toHaveValue('5d');
+  await page.getByLabel('Estimate', { exact: true }).press('Enter');
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await page.locator('td[data-f="title"]').click();
+  await page.getByLabel('Title', { exact: true }).fill('Restored local task edited');
+  await page.getByLabel('Title', { exact: true }).press('Enter');
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await page.locator('.content [data-tab="timeline"]').click();
+  const bar = page.locator('[data-bar]').first();
+  await bar.scrollIntoViewIfNeeded();
+  const barBox = await bar.boundingBox(),
+    dayWidth = Number(await bar.getAttribute('data-dw'));
+  await page.mouse.move(barBox.x + barBox.width / 2, barBox.y + barBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(barBox.x + barBox.width / 2 + dayWidth * 2, barBox.y + barBox.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  const persisted = await page.evaluate(async () => {
+    const identity = await (await fetch('/api/auth/me')).json();
+    return (await (await fetch(`/api/workspaces/${identity.workspaces[0].id}/content`)).json()).tasks[0];
+  });
+  expect(persisted.estimate).toBe('5d');
+  expect(persisted.title).toBe('Restored local task edited');
+  const shifted = new Date(target + 'T00:00:00Z');
+  shifted.setUTCDate(shifted.getUTCDate() + 2);
+  expect(persisted.due).toBe(shifted.toISOString().slice(0, 10));
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(nav.getByText('Restored local project', { exact: true })).toBeVisible();
-  await expect(page.getByText('Restored local task', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Restored local task edited', { exact: true }).first()).toBeVisible();
+  await nav.locator('[data-r="project"]').first().click();
+  await expect(page.locator('[data-drop-col="review"] [data-drag-card]')).toHaveCount(1);
+  await page.locator('[data-pop="filter"]').click();
+  await page.locator('[data-a="addFilter"][data-f="status"]').click();
+  await page.locator('[data-a="fToggleVal"][data-v="review"]').click();
+  await page.getByRole('heading', { name: 'Restored local project', exact: true }).click();
+  await page.locator('.content [data-pop="sort"]').click();
+  await page.locator('[data-a="setSort"][data-v="title"]').click();
+  await page.locator('.content input[data-in="viewQ"]').fill('not-matching');
+  await expect(page.locator('[data-drag-card]')).toHaveCount(0);
+  await page.locator('.content input[data-in="viewQ"]').fill('Restored');
+  await expect(page.locator('[data-drag-card]')).toHaveCount(1);
+  await page.locator('[data-a="saveView"]').click();
+  await page.getByLabel('View name', { exact: true }).fill('Shared review view');
+  await page.getByRole('button', { name: 'Layout', exact: true }).click();
+  await page.getByRole('option', { name: 'Table', exact: true }).click();
+  await page.locator('[data-a="saveViewSubmit"]').click();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await page.locator('.content').getByRole('button', { name: 'Members', exact: true }).click();
+  await page.getByLabel('Proyek privat', { exact: true }).check();
+  await page.locator('[data-in="nativeProjectMember"]:not(:disabled)').check();
+  await page.getByRole('button', { name: 'Selesai', exact: true }).click();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
   await page.locator('[data-a="nativeSignOut"]').click();
   await expect(page.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
   await page.getByLabel('Email', { exact: true }).fill('member@example.test');
   await page.getByLabel('Password', { exact: true }).fill('member-browser-password-123');
   await page.getByRole('button', { name: 'Login', exact: true }).click();
   await expect(nav).toBeVisible();
-  await expect(page.getByText('Restored local project', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Restored local task', { exact: true })).toHaveCount(0);
+  await expect(nav.getByText('Restored local project', { exact: true })).toBeVisible();
+  await expect(page.getByText('Restored local task edited', { exact: true }).first()).toBeVisible();
+  await nav.locator('[data-r="project"]').first().click();
+  await page.locator('.content .tab').filter({ hasText: 'Shared review view' }).click();
+  await expect(page.locator('.content').getByText('Restored local task edited', { exact: true }).first()).toBeVisible();
+  await expect(page.locator('.content input[data-in="viewQ"]')).toHaveValue('Restored');
+  await page.locator('.content').getByRole('button', { name: 'Members', exact: true }).click();
+  await expect(page.getByLabel('Proyek privat', { exact: true })).toBeChecked();
+  await expect(page.getByLabel('Proyek privat', { exact: true })).toBeDisabled();
   expect(errors).toEqual([]);
 });
