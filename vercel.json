@@ -3,6 +3,7 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "crons": [{ "path": "/api/internal/maintenance", "schedule": "15 0 * * *" }],
   "functions": {
     "api/index.js": {
       "maxDuration": 60

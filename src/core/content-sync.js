@@ -1,4 +1,4 @@
-const collections = { project: 'projects', task: 'tasks', savedView: 'savedViews' };
+const collections = { project: 'projects', task: 'tasks', savedView: 'savedViews', event: 'events' };
 const clone = value => JSON.parse(JSON.stringify(value));
 const stable = value =>
   JSON.stringify(value, (key, item) =>
@@ -7,8 +7,10 @@ const stable = value =>
 export function contentOperations(before, after) {
   const operations = [];
   for (const [entity, key] of Object.entries(collections)) {
-    const old = new Map((before[key] || []).map(value => [value.id, value]));
-    const current = new Map((after[key] || []).map(value => [value.id, value]));
+    // Attachment metadata comes from the file API and is never a task edit.
+    const writable = value => (entity === 'task' ? { ...value, attachments: [], fav: false } : entity === 'project' ? { ...value, fav: false } : value);
+    const old = new Map((before[key] || []).map(value => [value.id, writable(value)]));
+    const current = new Map((after[key] || []).map(value => [value.id, writable(value)]));
     for (const [id, value] of current) if (stable(old.get(id)) !== stable(value)) operations.push({ entity, id, value });
     for (const id of old.keys()) if (!current.has(id)) operations.push({ entity, id, value: null });
   }
@@ -61,6 +63,15 @@ export function createContentSync({ initial, capture, apply, request, status, ba
         retryRequest = null;
         retrySnapshot = null;
         if (stable(capture()) !== stable(submitted) && result.revision !== body.revision + (body.operations.length ? 1 : 0)) {
+          // Preferences belong to this account and do not compete with shared
+          // project edits. Adopt the latest domain snapshot while retaining
+          // preferences edited in flight; the next iteration saves those.
+          if (!contentOperations(submitted, capture()).length) {
+            const preferences = clone(capture().preferences);
+            base = clone(result);
+            apply({ ...result, preferences });
+            continue;
+          }
           blocked = Object.assign(new Error('Data telah berubah saat Anda mengedit. Muat data terbaru; draft Anda tetap disimpan.'), { status: 409 });
           backup(capture());
           status('conflict', blocked.message);

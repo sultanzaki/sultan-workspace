@@ -1,14 +1,21 @@
+import { applyTranslations } from './core/translations.js';
 import './demo.js';
 import { getWorkspaceSession } from './core/workspace-session.js';
 import { A, IN } from './actions/actions.js';
 import { render } from './shell/render.js';
 import { toast } from './ui/toast.js';
 import { readApiResponse } from './foundation/http.js';
-import { S, proj, save, visibleProjects } from './core/store.js';
+import { S, proj, task, save, visibleProjects } from './core/store.js';
 import { openModal } from './overlays/modals.js';
 import { DRAG } from './actions/drag-drop.js';
 import { createContentSync } from './core/content-sync.js';
 import { localWorkspaceKey } from './core/workspace-session.js';
+import { initAccounts } from './core/accounts-client.js';
+import { initAdministration } from './core/administration-client.js';
+import { initPlanning } from './core/planning-client.js';
+import { initPermissions } from './core/permissions-client.js';
+import { workspaceData } from './core/workspace-session.js';
+import { initCollaboration } from './core/collaboration-client.js';
 
 const session = getWorkspaceSession();
 session.contentRevision = session.content.revision;
@@ -27,28 +34,40 @@ function renderSynced() {
   }
 }
 document.addEventListener('focusout', () => {
-  if (deferredRender) queueMicrotask(renderSynced);
+  if (deferredRender) setTimeout(renderSynced, 0);
 });
 document.addEventListener('pointerdown', event => {
-  if (event.target.closest?.('[draggable=true],[data-bar],[data-rsz]')) pointerEditing = true;
+  if (event.button === 0) pointerEditing = true;
 });
 function endPointerEdit() {
   pointerEditing = false;
   if (deferredRender) {
     deferredRender = false;
-    queueMicrotask(renderSynced);
+    // Let the click following pointerup reach its original target first.
+    setTimeout(renderSynced, 0);
   }
 }
 window.addEventListener('pointerup', endPointerEdit);
 document.addEventListener('dragend', endPointerEdit);
 document.addEventListener('drop', endPointerEdit);
+window.addEventListener('pointercancel', () => {
+  if (!DRAG) endPointerEdit();
+});
 const sync = createContentSync({
   initial: session.content,
   capture: () => ({
     projects: S.data.projects,
     tasks: S.data.tasks,
     savedViews: S.data.savedViews,
-    preferences: { prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed, projectOrder: S.data.projOrder },
+    events: S.data.events,
+    preferences: {
+      prefs: S.prefs,
+      views: S.views,
+      collapsed: S.ui.collapsed,
+      projectOrder: S.data.projOrder,
+      notifPrefs: S.data.notifPrefs,
+      favorites: S.data.favorites,
+    },
   }),
   request: async (method, body) => {
     try {
@@ -67,12 +86,34 @@ const sync = createContentSync({
   },
   apply: content => {
     session.contentRevision = content.revision;
-    for (const key of ['projects', 'tasks', 'savedViews', 'activity']) S.data[key] = content[key];
+    const attachments = new Map(S.data.tasks.map(task => [task.id, task.attachments]));
+    for (const key of ['projects', 'tasks', 'savedViews', 'activity', 'events']) S.data[key] = content[key];
+    if (!session.collabPending || session.collabRefreshing) {
+      S.data.files = content.files || [];
+      S.data.notifs = content.notifs || [];
+      S.data.commentTotals = content.commentTotals || {};
+      const comments = new Map(S.data.comments.filter(comment => S.data.tasks.some(task => task.id === comment.task)).map(comment => [comment.id, comment]));
+      for (const comment of content.comments || []) comments.set(comment.id, comment);
+      S.data.comments = [...comments.values()].sort((a, b) => a.at - b.at);
+    } else for (const task of S.data.tasks) task.attachments = attachments.get(task.id) || [];
     const ids = content.projects.map(p => p.id),
       order = content.preferences.projectOrder || [];
     S.data.projOrder = [...order.filter(id => ids.includes(id)), ...ids.filter(id => !order.includes(id))];
     if (content.preferences.views) S.views = content.preferences.views;
     if (content.preferences.prefs) Object.assign(S.prefs, content.preferences.prefs, { name: session.user.name });
+    S.data.notifPrefs = content.preferences.notifPrefs || {};
+    S.data.favorites = content.preferences.favorites || {
+      tasks: content.tasks.filter(t => t.fav).map(t => t.id),
+      projects: content.projects.filter(p => p.fav).map(p => p.id),
+    };
+    if (content.preferences.collapsed !== undefined) S.ui.collapsed = content.preferences.collapsed;
+    if (content.directory) {
+      const directory = workspaceData({ ...session, content });
+      for (const key of ['ws', 'members', 'teams']) S.data[key] = directory[key];
+      Object.assign(session.workspace, content.directory);
+      const workspace = S.data.workspaces.find(w => w.id === session.workspace.id);
+      if (workspace) Object.assign(workspace, { name: S.data.ws.name, slug: content.directory.slug, c: S.data.ws.c });
+    }
     renderSynced();
   },
   status: (state, message) => {
@@ -147,22 +188,27 @@ A.nativeRetry = () => {
   void sync.retry().catch(() => {});
 };
 A.nativeRefresh = () => {
-  void sync.refresh(true).catch(error => toast(error.message, { kind: 'err' }));
+  void sync
+    .refresh(true)
+    .then(() => session.refreshComments?.())
+    .catch(error => toast(error.message, { kind: 'err' }));
 };
 sync.schedule();
 setInterval(() => {
   if (document.hidden || DRAG || pointerEditing || document.activeElement?.matches('input,textarea,[contenteditable=true]')) return;
-  void sync.refresh().catch(() => {});
+  void sync
+    .refresh()
+    .then(() => session.refreshComments?.())
+    .catch(() => {});
 }, 10000);
 window.addEventListener('beforeunload', event => {
-  if (sync.hasUnsavedContent()) {
+  if (sync.hasUnsavedContent() || (session.collabPending && !session.redirecting) || S.ui.uploads?.length) {
     event.preventDefault();
     event.returnValue = '';
   }
 });
 const management = () => location.assign(`/?manage=1&workspace=${encodeURIComponent(session.workspace.id)}`);
 const unavailable = () => toast('Fitur ini belum terhubung ke layanan akun. Gunakan Kelola workspace untuk pengaturan anggota.', { kind: 'info' });
-const noSharedFiles = () => toast('Penyimpanan isi file belum terhubung ke server. File belum diunggah.', { kind: 'info' });
 A.nativeManage = management;
 A.share = el => openModal({ type: 'share', id: el.dataset.id });
 IN.nativeProjectPrivate = el => {
@@ -173,6 +219,7 @@ IN.nativeProjectPrivate = el => {
 IN.nativeProjectMember = el => {
   const project = proj(el.dataset.id);
   project.members = el.checked ? [...new Set([...project.members, el.dataset.mid])] : project.members.filter(id => id !== el.dataset.mid);
+  if (!el.checked && project.permissions) delete project.permissions[el.dataset.mid];
   save();
   render();
 };
@@ -183,13 +230,18 @@ A.newTask = el => {
     A.newProject();
     return;
   }
-  newTask(el);
+  const explicit = el?.dataset.project || (S.ui.route === 'project' ? S.ui.params.id : null);
+  const preferred = explicit || visibleProjects().find(p => session.canProject?.(p))?.id;
+  newTask({ dataset: { ...el?.dataset, ...(preferred ? { project: preferred } : {}) } });
 };
 const pick = A.popPick;
 A.popPick = el => {
-  if (S.ui.pop?.type === 'recur') {
-    toast('Task berulang akan diaktifkan pada fase otomatisasi.', { kind: 'info' });
-    return;
+  if (S.ui.pop?.type === 'recur' && el.dataset.v !== 'Does not repeat') {
+    const target = S.ui.pop.id === '__form' ? S.ui.form : task(S.ui.pop.id);
+    if (!target?.due) {
+      toast('Tentukan deadline dahulu untuk task berulang.', { kind: 'info' });
+      return;
+    }
   }
   return S.ui.pop?.type === 'role' ? management() : pick(el);
 };
@@ -232,16 +284,16 @@ for (const key of [
   'doForgot',
   'resend',
   'auth',
-  'postComment',
-  'delComment',
 ])
   A[key] = unavailable;
 IN.sharePerm = unavailable;
 IN.shareAccess = unavailable;
-IN.uploadFiles = noSharedFiles;
-IN.formFiles = noSharedFiles;
 A.signOut = async () => {
   try {
+    if (session.collabPending) {
+      toast('Tunggu sampai komentar atau upload selesai.', { kind: 'info' });
+      return;
+    }
     await sync.flush();
     const response = await fetch('/api/auth/logout', {
       method: 'POST',
@@ -274,4 +326,30 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) void checkSession();
 });
 setInterval(checkSession, 60000);
+initCollaboration({ session, sync, renderSynced });
+initAccounts({ session, renderSynced });
+initAdministration({ session, renderSynced });
+initPlanning({ session, sync });
+initPermissions({ session });
+const previousRender = session.onRender;
+session.onRender = () => {
+  previousRender?.();
+  applyTranslations();
+};
+if (location.hash !== '#email-settings' && !/^#(task|project|file)=/.test(location.hash) && ['home', 'mytasks', 'inbox'].includes(S.prefs.home))
+  S.ui.route = S.prefs.home;
+for (const [action, key, collection] of [
+  ['toggleFavProj', 'projects', 'projects'],
+  ['toggleFavTask', 'tasks', 'tasks'],
+])
+  A[action] = el => {
+    const item = S.data[collection].find(x => x.id === el.dataset.id);
+    if (!item) return;
+    const values = new Set(S.data.favorites[key]);
+    values.has(item.id) ? values.delete(item.id) : values.add(item.id);
+    S.data.favorites[key] = [...values];
+    item.fav = values.has(item.id);
+    save();
+    render();
+  };
 render();

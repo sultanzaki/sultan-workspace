@@ -48,7 +48,7 @@ test('owner invites a member; member joins, reloads and logs out with no demo da
   await page.getByLabel('Password', { exact: true }).fill('browser-test-password-123');
   await page.getByRole('button', { name: 'Login', exact: true }).click();
   await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+  await page.goto('/?manage=1');
   await expect(page.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
   await expect(page.getByText('Website Redesign')).toHaveCount(0);
   const ids = await page.locator('[id]').evaluateAll(elements => elements.map(element => element.id));
@@ -76,7 +76,7 @@ test('owner invites a member; member joins, reloads and logs out with no demo da
     ]);
     expect(accepted.status(), await accepted.text()).toBe(201);
     await expect(memberPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
-    await memberPage.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+    await memberPage.goto('/?manage=1');
     await expect(memberPage.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
     await expect(memberPage.locator('img')).toHaveCount(0);
     await expect(memberPage.getByRole('heading', { name: 'Undang anggota' })).toHaveCount(0);
@@ -279,4 +279,396 @@ test('all workspace views use shared database content across accounts after clea
   await expect(page.getByLabel('Proyek privat', { exact: true })).toBeChecked();
   await expect(page.getByLabel('Proyek privat', { exact: true })).toBeDisabled();
   expect(errors).toEqual([]);
+});
+
+test('comments, original files, notifications and recurring tasks work across two accounts', async ({ page, browser }) => {
+  test.setTimeout(90000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  const fixture = await page.evaluate(async () => {
+    const identity = await (await fetch('/api/auth/me')).json(),
+      ws = identity.workspaces[0].id;
+    const [workspace, state] = await Promise.all([
+      fetch(`/api/workspaces/${ws}`).then(r => r.json()),
+      fetch(`/api/workspaces/${ws}/content`).then(r => r.json()),
+    ]);
+    const member = workspace.members.find(m => m.email === 'member@example.test');
+    const project = {
+      ...state.projects[0],
+      id: 'browser-collab',
+      key: 'COL',
+      name: 'Collaboration workspace project',
+      private: false,
+      members: [identity.user.id],
+      seq: 401,
+    };
+    const task = {
+      ...state.tasks[0],
+      id: 'browser-collab-task',
+      project: project.id,
+      key: 'COL-401',
+      title: 'Collaborative task',
+      status: 'todo',
+      due: '2037-01-31',
+      start: '2037-01-29',
+      subtasks: [],
+      attachments: [],
+      deps: [],
+      recur: null,
+      assignee: member.id,
+      archived: false,
+      completedAt: null,
+    };
+    const response = await fetch(`/api/workspaces/${ws}/content`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': identity.csrfToken },
+      body: JSON.stringify({
+        revision: state.revision,
+        mutationId: crypto.randomUUID(),
+        operations: [
+          { entity: 'project', id: project.id, value: project },
+          { entity: 'task', id: task.id, value: task },
+        ],
+      }),
+    });
+    if (!response.ok) throw new Error('Fixture setup failed: ' + response.status);
+    return { ws, member: member.id, memberName: member.name };
+  });
+  const url = `/?workspace=${fixture.ws}#task=browser-collab-task`;
+  await page.goto(url);
+  let drawer = page.locator('.drawer');
+  await expect(drawer.getByLabel('Task title', { exact: true })).toHaveValue('Collaborative task');
+  await drawer.getByLabel('Comment', { exact: true }).fill('@');
+  await drawer.locator(`[data-a="pickMention"][data-mid="${fixture.member}"]`).click();
+  const original = `Please review @${fixture.memberName}`;
+  await drawer.getByLabel('Comment', { exact: true }).fill(original);
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await drawer.getByRole('button', { name: 'Comment', exact: true }).click();
+  await expect(drawer.locator('.cmt .txt')).toHaveText(original);
+  await drawer.getByRole('button', { name: 'Edit comment', exact: true }).click();
+  const updated = `Updated review @${fixture.memberName}`;
+  await page.getByLabel('Komentar', { exact: true }).fill(updated);
+  await page.getByRole('button', { name: 'Simpan komentar', exact: true }).click();
+  await expect(drawer.locator('.cmt .txt')).toHaveText(updated);
+  await drawer.getByRole('button', { name: 'Add reaction', exact: true }).click();
+  await page.getByRole('button', { name: 'React 👍', exact: true }).click();
+  await expect(drawer.getByRole('button', { name: '👍 1', exact: true })).toBeVisible();
+  const bytes = 'Original shared file contents\nNot a generated preview.\n';
+  let uploadAcknowledgementLost = false;
+  await page.route('**/files', async route => {
+    if (route.request().method() === 'POST' && !uploadAcknowledgementLost) {
+      uploadAcknowledgementLost = true;
+      await route.fetch();
+      return route.abort();
+    }
+    return route.continue();
+  });
+  await drawer
+    .locator('input[data-in="uploadFiles"]')
+    .first()
+    .setInputFiles({ name: 'shared-notes.txt', mimeType: 'text/plain', buffer: Buffer.from(bytes) });
+  await drawer.getByRole('button', { name: 'Coba upload lagi', exact: true }).click();
+  await expect(drawer.locator('.attc').filter({ hasText: 'shared-notes.txt' })).toBeVisible();
+  await page.unroute('**/files');
+  const uploadCount = await page.evaluate(
+    async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).files.filter(file => file.name === 'shared-notes.txt').length,
+    fixture.ws,
+  );
+  expect(uploadCount).toBe(1);
+  await drawer.locator('.attc').filter({ hasText: 'shared-notes.txt' }).click();
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Unduh file', exact: true }).click();
+  const download = await downloading;
+  expect(await readFile(await download.path(), 'utf8')).toBe(bytes);
+  await page
+    .getByRole('dialog')
+    .filter({ has: page.getByRole('button', { name: 'Unduh file', exact: true }) })
+    .getByRole('button', { name: 'Close', exact: true })
+    .last()
+    .click();
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jX1sAAAAASUVORK5CYII=', 'base64');
+  await drawer.locator('input[data-in="uploadFiles"]').first().setInputFiles({ name: 'pixel.png', mimeType: 'image/png', buffer: png });
+  await expect(drawer.locator('.attc img')).toBeVisible();
+  await expect.poll(() => drawer.locator('.attc img').evaluate(img => img.naturalWidth)).toBe(1);
+  const memberContext = await browser.newContext({ baseURL: 'http://localhost:5173', reducedMotion: 'reduce' }),
+    memberPage = await memberContext.newPage();
+  memberPage.on('pageerror', error => errors.push(error.message));
+  try {
+    await memberPage.goto('/');
+    await memberPage.getByLabel('Email', { exact: true }).fill('member@example.test');
+    await memberPage.getByLabel('Password', { exact: true }).fill('member-browser-password-123');
+    await memberPage.getByRole('button', { name: 'Login', exact: true }).click();
+    await memberPage.getByRole('navigation', { name: 'Main', exact: true }).locator('[data-r="inbox"]').click();
+    let notification = memberPage.locator('.inbox-list [data-a="selNotif"]').filter({ hasText: updated });
+    await expect(notification).toBeVisible();
+    await notification.click();
+    await expect(notification.locator('[aria-label="Unread"]')).toHaveCount(0);
+    await memberPage.getByLabel('Reply', { exact: true }).fill('Member reply saved to the database');
+    await memberPage.getByRole('button', { name: 'Reply', exact: true }).click();
+    await expect(memberPage.locator('.inbox-prev .cmt .txt').filter({ hasText: 'Member reply saved to the database' })).toBeVisible();
+    await memberPage.reload();
+    await memberPage.getByRole('navigation', { name: 'Main', exact: true }).locator('[data-r="inbox"]').click();
+    notification = memberPage.locator('.inbox-list [data-a="selNotif"]').filter({ hasText: updated });
+    await expect(notification.locator('[aria-label="Unread"]')).toHaveCount(0);
+    await memberPage.goto(url);
+    await expect(memberPage.locator('.drawer .attc').filter({ hasText: 'shared-notes.txt' })).toBeVisible();
+    await expect(memberPage.locator('.drawer .cmt .txt').filter({ hasText: updated })).toBeVisible();
+    await expect(memberPage.getByRole('button', { name: '👍 1', exact: true })).toBeVisible();
+    await memberPage.locator('.drawer .cmt').filter({ hasText: updated }).getByRole('button', { name: 'Add reaction', exact: true }).click();
+    await memberPage.getByRole('button', { name: 'React 🎉', exact: true }).click();
+    await expect(memberPage.getByRole('button', { name: '🎉 1', exact: true })).toBeVisible();
+    await page.locator('.drawer').getByRole('button', { name: 'Muat data terbaru', exact: true }).click();
+    await expect(drawer.locator('.cmt .txt').filter({ hasText: 'Member reply saved to the database' })).toBeVisible();
+    await expect(drawer.getByRole('button', { name: '🎉 1', exact: true })).toBeVisible();
+    await drawer.locator('[data-pop="recur"]').click();
+    await page.locator('[data-a="popPick"][data-v="Monthly"]').click();
+    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await drawer.locator('[data-a="toggleDone"]').first().click();
+    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    const tasks = await page.evaluate(
+      async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).tasks.filter(t => t.project === 'browser-collab'),
+      fixture.ws,
+    );
+    expect(tasks).toHaveLength(2);
+    expect(tasks.find(t => t.status === 'todo').due).toBe('2037-02-28');
+    expect(tasks.find(t => t.status === 'todo').attachments).toEqual([]);
+    await drawer.locator('[data-a="toggleDone"]').first().click();
+    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await drawer.locator('[data-a="toggleDone"]').first().click();
+    await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    const count = await page.evaluate(
+      async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).tasks.filter(t => t.project === 'browser-collab').length,
+      fixture.ws,
+    );
+    expect(count).toBe(2);
+    await drawer.locator('.cmt').filter({ hasText: updated }).getByRole('button', { name: 'Delete comment', exact: true }).click();
+    await page.getByRole('button', { name: 'Hapus komentar', exact: true }).click();
+    await expect(drawer.locator('.cmt .txt').filter({ hasText: updated })).toHaveCount(0);
+    await memberPage.locator('.drawer').getByRole('button', { name: 'Muat data terbaru', exact: true }).click();
+    await expect(memberPage.locator('.drawer .cmt .txt').filter({ hasText: updated })).toHaveCount(0);
+    await expect(memberPage.locator('.drawer .cmt .txt').filter({ hasText: 'Member reply saved to the database' })).toBeVisible();
+  } finally {
+    await memberContext.close();
+  }
+  expect(errors).toEqual([]);
+});
+
+test('native settings save accounts, teams, manual guest invitations, milestones, events and personal preferences', async ({ page, browser }) => {
+  test.setTimeout(120000);
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/');
+  await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Anggota workspace', exact: true })).toBeVisible();
+  const settings = async sec => {
+    await page.locator(`.set-nav [data-sec="${sec}"]`).click();
+  };
+  await settings('profile');
+  await page.getByLabel('Nama lengkap', { exact: true }).fill('Browser Owner');
+  await page.getByLabel('Jabatan', { exact: true }).fill('Engineering Lead');
+  await page.getByRole('button', { name: 'Simpan profil', exact: true }).click();
+  await expect.poll(async () => page.evaluate(async () => (await (await fetch('/api/account')).json()).user.name)).toBe('Browser Owner');
+  await settings('teams');
+  await page.getByRole('button', { name: 'Buat tim', exact: true }).click();
+  await page.getByLabel('Nama tim', { exact: true }).fill('Native team');
+  await page.locator('[data-team-member]').first().check();
+  await page.getByRole('button', { name: 'Simpan tim', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Native team', exact: true })).toBeVisible();
+  const fixture = await page.evaluate(async () => {
+    const identity = await (await fetch('/api/auth/me')).json(),
+      ws = identity.workspaces[0].id;
+    return { ws, user: identity.user.id };
+  });
+  await page.locator('[data-a="go"][data-r="project"][data-id="browser-collab"]').first().click();
+  await page.locator('[data-a="go"][data-r="project"][data-tab="overview"]').first().click();
+  await page.getByRole('button', { name: 'Tambah milestone', exact: true }).click();
+  await page.getByLabel('Nama milestone', { exact: true }).fill('Real browser milestone');
+  await page.getByLabel('Tanggal target', { exact: true }).fill('2037-01-31');
+  await page.locator('.modal').getByRole('button', { name: 'Simpan', exact: true }).click();
+  await expect(page.getByText('Real browser milestone', { exact: true })).toBeVisible();
+  await page.locator('[data-a="go"][data-r="project"][data-tab="calendar"]').first().click();
+  await page.getByRole('button', { name: 'Buat event', exact: true }).click();
+  await page.getByLabel('Judul event', { exact: true }).fill('Database planning meeting');
+  const day = await page.getByLabel('Tanggal', { exact: true }).inputValue();
+  await page.getByLabel('Jam mulai', { exact: true }).fill('10:30');
+  await page.getByLabel('Zona waktu (IANA)', { exact: true }).fill('Asia/Jakarta');
+  await page.getByLabel('Link meeting', { exact: true }).fill('https://meet.example.test/planning');
+  await page.locator('.modal').getByRole('button', { name: 'Simpan', exact: true }).click();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.cal [data-pop="event"]').filter({ hasText: 'Database planning meeting' }).first()).toBeVisible();
+  const saved = await page.evaluate(async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).events, fixture.ws);
+  expect(saved.find(e => e.title === 'Database planning meeting').startsAt).toBe(day + 'T03:30:00.000Z');
+  await page.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+  await page.getByRole('button', { name: 'Undang anggota', exact: true }).click();
+  await page.getByLabel('Email penerima', { exact: true }).fill('native-guest@example.test');
+  await page.locator('#native-invite-role').selectOption('guest');
+  await page.locator('#native-invite-project').selectOption('browser-collab');
+  await page.locator('#native-invite-permission').selectOption('viewer');
+  await page.getByRole('button', { name: 'Buat undangan', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Link undangan siap', exact: true })).toBeVisible();
+  const invitation = await page.locator('#native-invitation-link').inputValue();
+  await page.locator('.modal [data-a="closeModal"]').first().click();
+  const context = await browser.newContext({ baseURL: 'http://localhost:5173' }),
+    guestPage = await context.newPage();
+  try {
+    await guestPage.goto(invitation);
+    await guestPage.getByLabel('Nama lengkap', { exact: true }).fill('Native Guest');
+    await guestPage.getByLabel('Password baru', { exact: true }).fill('native-guest-password-123');
+    await guestPage.getByRole('button', { name: 'Terima undangan', exact: true }).click();
+    await expect(guestPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+    await guestPage.locator('[data-a="go"][data-r="project"][data-id="browser-collab"]').first().click();
+    await guestPage.locator('.kcard').first().click();
+    await expect(guestPage.locator('.drawer [data-a="toggleDone"]').first()).toBeDisabled();
+    await expect(guestPage.locator('.drawer [data-a="postComment"]')).toBeDisabled();
+    await guestPage.locator('.drawer [data-a="closeDrawer"]').click();
+    await guestPage.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+    await guestPage.locator('.set-nav [data-sec="2fa"]').click();
+    await guestPage.getByLabel('Password saat ini', { exact: true }).fill('native-guest-password-123');
+    await guestPage.getByRole('button', { name: 'Mulai setup 2FA', exact: true }).click();
+    await expect(guestPage.getByAltText('QR setup authenticator')).toBeVisible();
+    const secret = await guestPage.locator('.set-body code').textContent();
+    const { totp } = await import('../../server/mfa.js');
+    await guestPage.getByLabel('Kode authenticator', { exact: true }).fill(totp(secret, Math.floor(Date.now() / 30000)));
+    await guestPage.getByRole('button', { name: 'Aktifkan 2FA', exact: true }).click();
+    await expect(guestPage.getByRole('heading', { name: 'Kode pemulihan 2FA', exact: true })).toBeVisible();
+    const codes = (await guestPage.locator('.set-body pre').textContent()).trim().split('\n');
+    expect(codes).toHaveLength(10);
+    await guestPage.getByRole('button', { name: 'Sudah saya simpan', exact: true }).click();
+    await expect(guestPage.getByRole('heading', { name: 'Autentikasi dua langkah aktif', exact: true })).toBeVisible();
+    await guestPage.locator('[data-a="nativeSignOut"]').click();
+    await expect(guestPage.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
+    await guestPage.getByLabel('Email', { exact: true }).fill('native-guest@example.test');
+    await guestPage.getByLabel('Password', { exact: true }).fill('native-guest-password-123');
+    await guestPage.getByRole('button', { name: 'Login', exact: true }).click();
+    await expect(guestPage.getByRole('heading', { name: 'Verifikasi dua langkah', exact: true })).toBeVisible();
+    await guestPage.getByLabel('Kode 2FA atau recovery code', { exact: true }).fill(codes[0]);
+    await guestPage.getByRole('button', { name: 'Verifikasi dan login', exact: true }).click();
+    await expect(guestPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+    await guestPage.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+    await guestPage.locator('.set-nav [data-sec="profile"]').click();
+    await guestPage.getByLabel('Nama lengkap', { exact: true }).fill('Updated Native Guest');
+    await guestPage.getByRole('button', { name: 'Simpan profil', exact: true }).click();
+    await expect.poll(async () => guestPage.evaluate(async () => (await (await fetch('/api/account')).json()).user.name)).toBe('Updated Native Guest');
+  } finally {
+    await context.close();
+  }
+  await settings('datetime');
+  await page.locator('#native-timezone').selectOption('Asia/Jakarta');
+  await page.locator('#native-timeformat').selectOption('24');
+  await page.locator('#native-dateformat').selectOption('d/M');
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await settings('language');
+  await page.locator('#native-language').selectOption('id-ID');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'id');
+  await expect(page.getByRole('navigation', { name: 'Main', exact: true }).getByText('Beranda', { exact: true })).toBeVisible();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'id');
+  const reloaded = await page.evaluate(async ws => await (await fetch(`/api/workspaces/${ws}/content`)).json(), fixture.ws);
+  expect(reloaded.preferences.prefs.tz).toBe('Asia/Jakarta');
+  expect(reloaded.projects.find(p => p.id === 'browser-collab').milestones.some(m => m.name === 'Real browser milestone')).toBe(true);
+  expect(reloaded.directory.teams.some(t => t.name === 'Native team')).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('email preferences generate an actual queued email and unsubscribe confirms without disabling account security', async ({ page, browser }) => {
+  test.setTimeout(90000);
+  await page.goto('/');
+  await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+  const fixture = await page.evaluate(async () => {
+    const identity = await (await fetch('/api/auth/me')).json(),
+      ws = identity.workspaces[0].id,
+      content = await (await fetch(`/api/workspaces/${ws}/content`)).json();
+    return {
+      ws,
+      member: content.directory.members.find(m => m.email === 'member@example.test').id,
+      memberName: content.directory.members.find(m => m.email === 'member@example.test').name,
+      task: content.tasks.find(t => t.project === 'browser-collab').id,
+    };
+  });
+  const context = await browser.newContext({ baseURL: 'http://localhost:5173' }),
+    memberPage = await context.newPage(),
+    pool = createPool(testConfig());
+  try {
+    await memberPage.goto('/');
+    await memberPage.getByLabel('Email', { exact: true }).fill('member@example.test');
+    await memberPage.getByLabel('Password', { exact: true }).fill('member-browser-password-123');
+    await memberPage.getByRole('button', { name: 'Login', exact: true }).click();
+    await expect(memberPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+    await memberPage.goto(`/?workspace=${fixture.ws}#email-settings`);
+    await expect(memberPage.getByRole('heading', { name: 'Email', exact: true })).toBeVisible();
+    const mention = memberPage.getByRole('checkbox', { name: 'email_mention', exact: true });
+    await mention.uncheck();
+    await expect(memberPage.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await mention.check();
+    await expect(memberPage.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    await memberPage.getByRole('checkbox', { name: 'email_comment', exact: true }).uncheck();
+    await memberPage.locator('.set-nav [data-sec="notif-mentions"]').click();
+    await memberPage.getByRole('checkbox', { name: 'push_mention', exact: true }).uncheck();
+    await expect(memberPage.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+    const commentId = await page.evaluate(async fixture => {
+      const me = await (await fetch('/api/auth/me')).json(),
+        id = crypto.randomUUID();
+      const r = await fetch(`/api/workspaces/${fixture.ws}/tasks/${fixture.task}/comments`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken },
+        body: JSON.stringify({ id, text: 'Email workflow proof <b>escaped text</b> @' + fixture.memberName, mentions: [fixture.member] }),
+      });
+      if (r.status !== 201) throw new Error('Comment failed');
+      return id;
+    }, fixture);
+    let mail;
+    await expect
+      .poll(
+        async () => {
+          mail = (
+            await pool.query(
+              "SELECT o.id,o.delivery_status FROM mail_outbox o JOIN email_events e ON o.dedupe_key='notification:'||e.id WHERE e.comment_id=$1 AND e.recipient_id=$2",
+              [commentId, fixture.member],
+            )
+          ).rows[0];
+          return mail?.delivery_status;
+        },
+        { timeout: 20000 },
+      )
+      .toBe('accepted');
+    const delivered = JSON.parse(await readFile(`.local/e2e-mail/${mail.id}.json`, 'utf8'));
+    expect(delivered.to).toBe('member@example.test');
+    expect(delivered.text).toContain('Email workflow proof');
+    expect(delivered.html).toContain('&lt;b&gt;escaped text&lt;/b&gt;');
+    expect((await pool.query('SELECT 1 FROM user_notifications WHERE comment_id=$1 AND recipient_id=$2', [commentId, fixture.member])).rowCount).toBe(0);
+    const token = delivered.text.match(/#unsubscribe=([a-f0-9]{64})/)[1],
+      unsubscribePage = await context.newPage();
+    await unsubscribePage.goto('/#unsubscribe=' + token);
+    await expect(unsubscribePage.getByRole('heading', { name: 'Pengaturan email aktivitas', exact: true })).toBeVisible();
+    expect(unsubscribePage.url()).not.toContain(token);
+    let prefs = (await pool.query('SELECT data FROM workspace_preferences WHERE workspace_id=$1 AND user_id=$2', [fixture.ws, fixture.member])).rows[0].data;
+    expect(prefs.notifPrefs.email_mention).toBe(true);
+    await unsubscribePage.getByRole('button', { name: 'Nonaktifkan email aktivitas', exact: true }).click();
+    await expect(unsubscribePage.getByRole('heading', { name: 'Email aktivitas dinonaktifkan', exact: true })).toBeVisible();
+    prefs = (await pool.query('SELECT data FROM workspace_preferences WHERE workspace_id=$1 AND user_id=$2', [fixture.ws, fixture.member])).rows[0].data;
+    expect(prefs.notifPrefs.email_mention).toBe(false);
+    expect(prefs.notifPrefs.email_digest).toBe(false);
+    expect(prefs.notifPrefs.push_mention).toBe(false);
+    await page.goto(`/?workspace=${fixture.ws}#email-settings`);
+    await page.getByRole('button', { name: 'Muat status email', exact: true }).click();
+    await expect(page.locator('.set-body')).toContainText('member@example.test');
+    expect(await page.locator('.set-body').textContent()).not.toContain(token);
+  } finally {
+    await pool.end();
+    await context.close();
+  }
 });
