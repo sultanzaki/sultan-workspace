@@ -99,6 +99,8 @@ export function fsize(b) {
 }
 export function filePrev(f) {
   const t = FT[f.type] || FT.other;
+  if (f.url)
+    return `<div class="fprev">${f.preview ? `<img src="${esc(f.preview)}" alt="${esc(f.name)}" loading="lazy" style="width:100%;height:100%;object-fit:contain">` : ic(t.i, 30)}</div>`;
   let art;
   if (f.type === 'img')
     art = `<div class="art" style="padding:0;overflow:hidden;background:linear-gradient(135deg,color-mix(in srgb,${t.c} 35%,var(--surface)),color-mix(in srgb,${t.c} 10%,var(--surface)))"><svg viewBox="0 0 100 60" preserveAspectRatio="none" style="width:100%;height:100%"><path d="M0 60 L30 28 L52 46 L70 32 L100 58 L100 60Z" fill="color-mix(in srgb,${t.c} 45%,var(--surface))"/><circle cx="76" cy="16" r="7" fill="color-mix(in srgb,${t.c} 30%,var(--surface))"/></svg></div>`;
@@ -109,4 +111,7 @@ export function filePrev(f) {
   else art = `<div class="art"><i class="h"></i><i></i><i></i><i style="width:80%"></i><i></i><i style="width:60%"></i></div>`;
   const ext = (f.name.split('.').pop() || '').slice(0, 4);
   return `<div class="fprev">${art}<span class="ext" style="--c:${t.c}">${esc(ext)}</span></div>`;
+}
+export function uploadStatus(upload) {
+  return `<div class="upl" role="status" style="margin-bottom:6px"><span class="grow"><b>${esc(upload.name)}</b><span class="faint" style="display:block">${upload.error ? esc(upload.error) : 'Mengunggah ke server…'}</span></span>${upload.error && !upload.uploading ? `<button class="btn btn-sm btn-secondary" data-a="nativeRetryUpload" data-id="${upload.id}">Coba upload lagi</button><button class="btn btn-sm btn-ghost" data-a="nativeDiscardUpload" data-id="${upload.id}">Tutup</button>` : ''}</div>`;
 }

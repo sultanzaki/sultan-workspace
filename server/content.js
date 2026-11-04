@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 import sanitizeHtml from 'sanitize-html';
 import { transaction } from './db.js';
 import { membership, fail, digest, limit } from './security.js';
+import { canReadProject } from './content-access.js';
+import { collaborationSnapshot, taskResourcesMoved } from './collaboration.js';
+import { RECURRENCE, dueReminders, taskChanged } from './automations.js';
 
 function parse(schema, value) {
   const result = schema.safeParse(value);
@@ -84,7 +87,10 @@ const taskSchema = z.object({
   start: date,
   labels: z.array(z.string().regex(/^[a-z0-9_-]{1,40}$/)).max(50),
   subtasks: z.array(subtaskSchema).max(200),
-  attachments: z.array(z.unknown()).max(0),
+  attachments: z
+    .array(z.unknown())
+    .max(500)
+    .transform(() => []),
   deps: z.array(id).max(100),
   desc: rich,
   estimate: z.union([z.string().max(30), number, z.null()]),
@@ -92,7 +98,7 @@ const taskSchema = z.object({
   updated: number,
   order: number,
   fav: z.boolean(),
-  recur: z.null(),
+  recur: z.enum(RECURRENCE).nullable(),
   archived: z.boolean().optional(),
   completedAt: number.nullable().optional(),
   archivedAt: number.nullable().optional(),
@@ -143,7 +149,7 @@ const batch = z
     preferences: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
-const canRead = (project, user, role) => project && (!project.private || ['owner', 'admin'].includes(role) || project.members.includes(user));
+const canRead = canReadProject;
 
 function safePreferences(value) {
   if (JSON.stringify(value).length > 131072) fail(400, 'Pengaturan tampilan terlalu besar.');
@@ -162,6 +168,16 @@ function safePreferences(value) {
         views: z.record(z.string().max(150), viewPreferences).optional(),
         collapsed: z.boolean().optional(),
         projectOrder: z.array(id).max(5000).optional(),
+        notifPrefs: z
+          .object({
+            push_mention: z.boolean().optional(),
+            push_assign: z.boolean().optional(),
+            push_comment: z.boolean().optional(),
+            push_due: z.boolean().optional(),
+            push_status: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
     value,
@@ -183,21 +199,24 @@ async function snapshot(db, ws, user, role) {
       [ws, ids, user],
     )
   ).rows[0];
+  const collaboration = await collaborationSnapshot(db, ws, user, ids);
   return {
     revision: row.revision,
     projects,
-    tasks: row.tasks,
+    tasks: row.tasks.map(task => ({ ...task, attachments: collaboration.files.filter(file => file.task === task.id) })),
     savedViews: row.views,
     preferences: row.preferences,
     activity: row.activities.map(a => ({ id: a.id, by: a.actor_id, verb: a.verb, task: a.task_id, project: a.project_id, at: +new Date(a.at), extra: '' })),
+    ...collaboration,
   };
 }
 export function registerContent(app, pool, authenticated) {
   app.get('/api/workspaces/:ws/content', authenticated, async (req, res) => {
     const result = await transaction(pool, async db => {
       parse(z.string().uuid(), req.params.ws);
-      await db.query('SELECT id FROM workspaces WHERE id=$1 FOR SHARE', [req.params.ws]);
+      await db.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [req.params.ws]);
       const role = await membership(db, req.params.ws, req.session.user_id);
+      await dueReminders(db, req.params.ws);
       return snapshot(db, req.params.ws, req.session.user_id, role);
     });
     res.json(result);
@@ -298,6 +317,7 @@ export function registerContent(app, pool, authenticated) {
                 fail(400, 'Assignee harus anggota aktif workspace.');
               if (new Set(value.subtasks.map(s => s.id)).size !== value.subtasks.length) fail(400, 'ID subtask harus unik.');
               if (value.start && value.due && value.start > value.due) fail(400, 'Tanggal mulai harus sebelum deadline.');
+              if (value.recur && !value.due) fail(400, 'Task berulang harus memiliki deadline.');
               if (!value.key.startsWith(project.key + '-')) fail(400, 'Nomor task tidak sesuai proyek.');
               value.created = existing?.created || Date.now();
               value.updated = Date.now();
@@ -306,6 +326,10 @@ export function registerContent(app, pool, authenticated) {
               `INSERT INTO ${table}(workspace_id,id,project_id,data) VALUES ($1,$2,$3,$4) ON CONFLICT(workspace_id,id) DO UPDATE SET project_id=EXCLUDED.project_id,data=EXCLUDED.data`,
               [ws, op.id, value.project, value],
             );
+          }
+          if (op.entity === 'task') {
+            if (existing && existing.project !== value.project) await taskResourcesMoved(db, ws, value.id, value.project);
+            await taskChanged(db, { workspace: ws, user, project, before: existing, value, mutation: input.mutationId });
           }
           if (op.entity !== 'savedView')
             await db.query('INSERT INTO content_activity(id,workspace_id,actor_id,project_id,task_id,verb) VALUES ($1,$2,$3,$4,$5,$6)', [

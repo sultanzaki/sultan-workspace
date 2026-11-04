@@ -30,6 +30,8 @@ export function workspaceData(value, saved) {
     if (Array.isArray(source?.[key])) data[key] = source[key];
   }
   if (value.content) {
+    data.notifPrefs = value.content.preferences?.notifPrefs || {};
+    data.commentTotals = value.content.commentTotals || {};
     const ids = data.projects.map(p => p.id);
     data.projOrder = [
       ...(value.content.preferences?.projectOrder || []).filter(id => ids.includes(id)),

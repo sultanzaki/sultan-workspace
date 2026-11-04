@@ -1,6 +1,6 @@
 # Fondasi aplikasi tim
 
-## Status fase 1–3
+## Status fase 1–5
 
 Setelah login, halaman utama kembali memakai UI workspace asli: dashboard, proyek, task, board/list/table/calendar/timeline/files, pencarian, favorit, dan aktivitas. Panel administrasi akun/anggota/tim tersedia melalui **Kelola workspace** atau `/?manage=1`.
 
@@ -12,7 +12,7 @@ Data anggota lain dimuat sekitar setiap 10 detik saat halaman aktif, tanpa edit 
 
 Workspace native dimulai kosong dengan identitas, anggota, dan tim dari API; tidak memuat proyek, anggota, tagihan, atau sesi fiktif dari data demo. Penyimpanan demo lama `gr8r.v2` tetap dipertahankan dan tidak dicampur dengan data native. Tampilan demo seeded masih bisa dibuka terpisah pada development dengan `VITE_ENABLE_DEMO=true npm run dev:web`.
 
-Komentar, upload isi file, task berulang, notifikasi kolaborasi, MFA, dan billing belum diimplementasikan sebagai layanan bersama. Alur yang belum tersedia menampilkan pesan jelas; pengaturan akun/anggota diarahkan ke pengelolaan native. Email ditunda sampai SMTP dikonfigurasi. Logout tetap mencabut sesi di server. UI workspace hanya dimuat setelah sesi dan keanggotaan workspace diverifikasi.
+Fase 4–5 menambahkan komentar/mention/reaksi, penyimpanan isi file asli, notifikasi pribadi, pengingat, dan task berulang dari server. Rincian tersedia di [panduan kolaborasi dan otomatisasi](collaboration.md). MFA dan billing belum tersedia; pengaturan akun/anggota tetap melalui pengelolaan native. Email ditunda sampai SMTP dikonfigurasi. Logout mencabut sesi di server, dan UI workspace hanya dimuat setelah sesi serta keanggotaan diverifikasi.
 
 ## Arsitektur
 
@@ -85,7 +85,7 @@ Verifikasi koneksi Supabase belum dilakukan tanpa kredensial project. Tes yang t
 2. Pilih **SQL Editor → New query**.
 3. Buka [supabase-migration.sql](supabase-migration.sql), salin **seluruh isi file**, lalu tempel ke query tersebut.
 4. Klik **Run**. Hasil akhir menampilkan nama dan waktu migrasi yang sudah diterapkan. Ini membuat schema `app_private`, tabel aplikasi, dan catatan versi migrasi. Tidak menghapus data yang sudah ada; jika dijalankan lagi, migrasi yang sudah tercatat dilewati setelah checksum diperiksa.
-5. Jika berhasil, jalankan query pemeriksaan berikut. Hasilnya harus memuat `001_foundation.sql` dan `002_project_content.sql`. Upgrade dari versi lama memakai file SQL yang sama: migrasi yang sudah ada dilewati, lalu tabel konten ditambahkan. Akun owner yang sudah dibuat tetap dipakai.
+5. Jika berhasil, jalankan query pemeriksaan berikut. Hasilnya harus memuat `001_foundation.sql`, `002_project_content.sql`, dan `003_collaboration_automation.sql`. Upgrade memakai file SQL yang sama: migrasi yang sudah ada dilewati, lalu tabel baru ditambahkan. Akun owner dan data yang sudah ada tetap dipakai.
 
 ```sql
 select name, applied_at from app_private.schema_migrations;
@@ -105,7 +105,7 @@ File ini dihasilkan dari migrasi yang sama dengan CLI. Pengembang dapat membuat 
 6. Jalankan migrasi melalui SQL Editor di atas atau CLI privat. Buat akun owner melalui setup berkunci atau CLI. Migrasi tidak dijalankan pada build; pembuatan owner melalui web hanya aktif jika operator mengatur kunci setup.
 7. Redeploy setelah mengubah environment variables. Buka `/api/health`: hasil normal adalah `{"status":"ok"}`. Tanpa sesi login, `/api/auth/me` semestinya mengembalikan JSON 401, bukan halaman 404 Vercel. Bila migrasi belum dijalankan, API mengembalikan JSON 503 dengan instruksi migrasi. Log inisialisasi sekarang menyebut kode, tahap (`configuration`, `pool`, `database`, atau `application`), dan nama isian terkait; tidak mencetak nilai kredensial. Contoh: `DATABASE_TIMEOUT` berarti koneksi belum tercapai, sedangkan `APP_ORIGIN_INVALID` berarti format domain perlu diperbaiki.
 
-Saat email diaktifkan, proses pengiriman dicoba sesudah request. Agar retry tetap berjalan ketika tidak ada pengunjung, gunakan scheduler yang memanggil `GET /api/internal/maintenance` dengan header `Authorization: Bearer <CRON_SECRET>`, lalu set `CRON_SECRET` acak minimal 32 karakter di Vercel. Setiap pemanggilan menangani maksimal satu pesan. Pilih frekuensi yang sesuai jumlah pesan dan masa berlaku token (reset 30 menit). Tidak ada jadwal cron yang diaktifkan otomatis: Vercel Hobby hanya mengizinkan cron harian sehingga tidak cukup untuk retry reset password tepat waktu; gunakan paket/scheduler yang mendukung interval lebih sering sebelum mengandalkan email operasional. Endpoint menolak request tanpa secret. Selama email disabled, pengaturan scheduler tidak diperlukan untuk login.
+Endpoint `GET /api/internal/maintenance` memeriksa pengingat dan mengirim maksimal satu pesan email yang mengantre. Endpoint memerlukan `Authorization: Bearer <CRON_SECRET>`, dengan secret acak minimal 32 karakter. `vercel.json` menyediakan jadwal harian pukul 00:15 UTC untuk pengingat; aktifkan dengan `CRON_SECRET` di environment Production Vercel. Login, komentar, file, notifikasi langsung, dan pembuatan task berulang tidak memerlukan scheduler atau SMTP. Jika email kelak diaktifkan, cron harian tidak cukup untuk retry reset password yang berlaku 30 menit; gunakan scheduler lebih sering sebelum mengandalkan email operasional.
 
 ## Autentikasi dan izin
 
@@ -170,4 +170,4 @@ Simpan teks lisensi MIT dan copyright notice asli dari pembuatnya saat tersedia,
 
 ## Tahap selanjutnya
 
-Tahap berikutnya mencakup komentar/mention, penyimpanan isi file sungguhan, notifikasi kolaborasi, task berulang, URL langsung ke objek, dan email ketika SMTP tersedia. Fondasi proyek/task dan tampilan sudah memakai API berizin serta database bersama.
+Fase 4–5 sudah mencakup komentar/mention, file asli, notifikasi, pengingat, task berulang, dan tautan langsung ke objek. Email tetap menunggu SMTP; MFA, billing, dan penyimpanan object storage untuk file yang lebih besar merupakan pengembangan terpisah.

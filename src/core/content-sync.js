@@ -7,8 +7,10 @@ const stable = value =>
 export function contentOperations(before, after) {
   const operations = [];
   for (const [entity, key] of Object.entries(collections)) {
-    const old = new Map((before[key] || []).map(value => [value.id, value]));
-    const current = new Map((after[key] || []).map(value => [value.id, value]));
+    // Attachment metadata comes from the file API and is never a task edit.
+    const writable = value => (entity === 'task' ? { ...value, attachments: [] } : value);
+    const old = new Map((before[key] || []).map(value => [value.id, writable(value)]));
+    const current = new Map((after[key] || []).map(value => [value.id, writable(value)]));
     for (const [id, value] of current) if (stable(old.get(id)) !== stable(value)) operations.push({ entity, id, value });
     for (const id of old.keys()) if (!current.has(id)) operations.push({ entity, id, value: null });
   }

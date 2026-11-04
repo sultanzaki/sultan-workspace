@@ -31,6 +31,11 @@ export function modalHtml(m) {
     `<div class="modal-h"><div><h2 id="mt-${m.type}">${title}</h2>${sub ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${sub}</div>` : ''}</div><button class="ibtn ibtn-sm" data-a="closeModal" aria-label="Close">${ic('x', 16)}</button></div>`;
   const wrap = (cls, inner) => `<div class="modal ${cls}" role="dialog" aria-modal="true" aria-labelledby="mt-${m.type}">${inner}</div>`;
   switch (m.type) {
+    case 'nativeCommentEdit':
+      return wrap(
+        '',
+        `${H('Edit komentar')}<div class="modal-b"><label class="label" for="comment-edit">Komentar</label><textarea class="input" id="comment-edit" data-in="nativeCommentEdit" maxlength="5000" rows="5" autofocus>${esc(m.text)}</textarea></div><div class="modal-f"><span class="sp"></span><button class="btn btn-secondary" data-a="closeModal">Batal</button><button class="btn btn-primary" data-a="nativeSaveComment" ${m.saving ? 'disabled' : ''}>${m.saving ? 'Menyimpan…' : 'Simpan komentar'}</button></div>`,
+      );
     case 'task':
       return wrap('', taskModal(m, H));
     case 'project':
@@ -302,6 +307,8 @@ export function shortcutsModal(H) {
 export function filePreviewModal(m, H) {
   const f = m.file;
   const t = FT[f.type] || FT.other;
+  if (f.url)
+    return `${H(esc(f.name), `${t.n} · ${f.size}`)}<div class="modal-b">${f.preview ? `<img src="${esc(f.preview)}" alt="${esc(f.name)}" style="display:block;max-width:100%;max-height:65vh;margin:auto;object-fit:contain">` : '<p>Unduh file asli untuk membukanya di aplikasi yang sesuai.</p>'}</div><div class="modal-f"><button class="btn btn-secondary" data-a="copyLink" data-fid="${f.id}">Copy link</button><span class="sp"></span><button class="btn btn-primary" data-a="nativeDownloadFile" data-id="${f.id}">Unduh file</button><button class="btn btn-secondary" data-a="closeModal">Close</button></div>`;
   return `${H(esc(f.name), `${t.n} · ${f.size} · Uploaded by ${esc(mem(f.by)?.name || 'you')} ${ago(f.at)}`)}
   <div class="modal-b"><div style="border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden">${filePrev(f).replace('class="fprev"', 'class="fprev" style="aspect-ratio:16/9"')}</div>
   ${m.tid ? `<div class="row faint" style="font-size:12.5px">${ic('link', 13)}Attached to <button class="link" data-a="openTask" data-id="${m.tid}">${esc(task(m.tid)?.title)}</button></div>` : ''}</div>
