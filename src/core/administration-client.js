@@ -96,7 +96,7 @@ export function initAdministration({ session, renderSynced }) {
       input.permission = value('native-invite-permission');
     }
     if (!input.email) {
-      toast('Isi email penerima.', { kind: 'err' });
+      toast("Enter the recipient's email address.", { kind: 'err' });
       return;
     }
     void modalRun(modal, async () => {
@@ -118,7 +118,7 @@ export function initAdministration({ session, renderSynced }) {
       .then(() => toast('Link disalin.', { kind: 'info' }))
       .catch(() => {
         document.getElementById('native-invitation-link')?.select();
-        toast('Pilih dan salin link dari kotak undangan.', { kind: 'info' });
+        toast('Select and copy the link from the invitation box.', { kind: 'info' });
       });
   };
   A.nativeResendInvitation = el => {
@@ -132,7 +132,7 @@ export function initAdministration({ session, renderSynced }) {
         ...(invitation.project_id ? { project: invitation.project_id, permission: invitation.project_permission } : {}),
       };
       const result = await api(base + '/invitations', 'POST', input);
-      toast(result.message || 'Email undangan masuk antrean.', { kind: 'info' });
+      toast(result.message || 'Invitation email queued.', { kind: 'info' });
       await loadAdministration();
     });
   };
@@ -171,9 +171,9 @@ export function initAdministration({ session, renderSynced }) {
     if (!member) return;
     const active = member.status !== 'active';
     confirmDlg({
-      title: active ? 'Aktifkan anggota?' : 'Nonaktifkan anggota?',
-      body: active ? 'Anggota kembali mendapat akses sesuai rolenya.' : 'Sesi login anggota akan dicabut.',
-      ok: active ? 'Aktifkan' : 'Nonaktifkan',
+      title: active ? 'Activate member?' : 'Deactivate member?',
+      body: active ? 'The member will regain access according to their role.' : "The member's sessions will be revoked.",
+      ok: active ? 'Activate' : 'Deactivate',
       run: () =>
         session.perform(async () => {
           await api(base + `/members/${member.id}`, 'PATCH', { active });
@@ -193,16 +193,16 @@ export function initAdministration({ session, renderSynced }) {
     const modal = S.ui.modals.at(-1),
       input = { name: value('native-team-name'), members: [...document.querySelectorAll('[data-team-member]:checked')].map(el => el.dataset.teamMember) };
     if (!input.name.trim()) {
-      toast('Nama tim tidak boleh kosong.', { kind: 'err' });
+      toast('Team name cannot be empty.', { kind: 'err' });
       return;
     }
     void modalRun(modal, () => api(base + '/teams' + (modal.id ? '/' + modal.id : ''), modal.id ? 'PATCH' : 'POST', input));
   };
   A.nativeDeleteTeam = el =>
     confirmDlg({
-      title: 'Hapus tim?',
-      body: 'Proyek dan task tetap disimpan; hubungan proyek dengan tim ini akan dilepas.',
-      ok: 'Hapus tim',
+      title: 'Delete team?',
+      body: 'Projects and tasks will be kept. Their link to this team will be removed.',
+      ok: 'Delete team',
       danger: true,
       run: () => session.perform(() => api(base + `/teams/${el.dataset.id}`, 'DELETE')),
     });

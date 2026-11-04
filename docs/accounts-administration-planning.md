@@ -12,7 +12,7 @@ Perubahan ini menambah fitur melalui PR; tidak menjalankan migrasi pada database
 
 ## Akun dan keamanan
 
-Buka **Settings** dari sidebar atau **Kelola workspace**, lalu pilih **Profile**, **Password**, **Sessions**, atau **Two-factor authentication**.
+Buka **Settings** dari sidebar atau **Settings → Members/Teams**, lalu pilih **Profile**, **Password**, **Sessions**, atau **Two-factor authentication**.
 
 - Nama, jabatan, warna avatar, dan foto profil disimpan di server. Foto PNG/JPEG/WebP maksimal 256 KB disimpan dalam database; URL foto tetap memerlukan sesi dan hubungan workspace/proyek yang sesuai. Email login ditampilkan untuk identitas akun dan tidak dapat diganti melalui form profil.
 - Password saat ini diverifikasi sebelum perubahan. Password baru minimal 12 karakter. Perubahan password mencabut seluruh sesi, challenge login, dan link reset password akun tersebut.

@@ -33,8 +33,8 @@ export async function queueSecurityMail(db, config, userId, message) {
     to: user.email,
     userId,
     kind: 'security',
-    subject: 'Pemberitahuan keamanan akun',
-    body: `Halo ${user.name},\n\n${message}\nWaktu: ${new Date().toISOString()}\n\nJika ini bukan tindakan Anda, segera amankan akun dengan mengganti password. 2FA tetap diperlukan bila aktif.\n${config.APP_ORIGIN}/`,
+    subject: 'Account security notification',
+    body: `Hello ${user.name},\n\n${message}\nTime: ${new Date().toISOString()}\n\nIf this was not you, secure your account by changing your password immediately. Two-factor authentication is still required when enabled.\n${config.APP_ORIGIN}/`,
   });
 }
 export function createMailer(config, { fetchImpl = globalThis.fetch } = {}) {

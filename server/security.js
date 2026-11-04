@@ -36,7 +36,7 @@ export const fail = (status, message) => {
 };
 export const parse = (schema, body) => {
   const result = schema.safeParse(body);
-  if (!result.success) fail(400, 'Periksa isian Anda. Password minimal 12 karakter; nama maksimal 100 karakter.');
+  if (!result.success) fail(400, 'Check your input. Passwords need at least 12 characters and names must not exceed 100 characters.');
   return result.data;
 };
 
@@ -47,14 +47,14 @@ export async function limit(db, key, max, seconds) {
     expires_at = CASE WHEN rate_limits.expires_at < now() THEN EXCLUDED.expires_at ELSE rate_limits.expires_at END RETURNING count`,
     [digest(key), seconds],
   );
-  if (rows[0].count > max) fail(429, 'Terlalu banyak percobaan. Coba lagi nanti.');
+  if (rows[0].count > max) fail(429, 'Too many attempts. Try again later.');
 }
 
 export async function membership(db, workspaceId, userId, roles = ['owner', 'admin', 'member', 'guest'], lock = false) {
   uuid.parse(workspaceId);
   if (lock) await db.query('SELECT id FROM workspaces WHERE id = $1 FOR UPDATE', [workspaceId]);
   const { rows } = await db.query('SELECT role FROM memberships WHERE workspace_id = $1 AND user_id = $2 AND active', [workspaceId, userId]);
-  if (!rows.length) fail(404, 'Workspace tidak ditemukan.');
-  if (!roles.includes(rows[0].role)) fail(403, 'Anda tidak memiliki izin untuk tindakan ini.');
+  if (!rows.length) fail(404, 'Workspace not found.');
+  if (!roles.includes(rows[0].role)) fail(403, 'You do not have permission to perform this action.');
   return rows[0].role;
 }

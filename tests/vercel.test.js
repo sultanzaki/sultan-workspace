@@ -32,7 +32,7 @@ test('initialization diagnostics identify safe categories without exposing crede
   const timeout = Object.assign(new Error(`Connection timeout: ${sensitive}`), { setupStage: 'database' });
   const result = initializationDiagnostic(timeout);
   assert.equal(result.code, 'DATABASE_TIMEOUT');
-  assert.match(result.message, /Session pooler/);
+  assert.match(result.message, /session pooler/);
   assert.doesNotMatch(JSON.stringify(result), /private-password|private-host/);
   assert.doesNotMatch(
     JSON.stringify(initializationDiagnostic(Object.assign(new Error(sensitive), { code: sensitive, configFields: [sensitive] }))),
@@ -64,13 +64,13 @@ test('non-JSON platform failures show an actionable message without leaking resp
   ]) {
     await assert.rejects(readApiResponse(new Response(body, { status, headers: { 'content-type': contentType } })), error => {
       assert.equal(error.status, 503);
-      assert.match(error.message, /Layanan akun belum tersedia/);
+      assert.match(error.message, /account service is unavailable/);
       assert.doesNotMatch(error.message, /Unexpected token|private platform|NOT_FOUND/);
       return true;
     });
   }
   await assert.rejects(
-    readApiResponse(new Response('{"error":"Silakan login kembali."}', { status: 401, headers: { 'content-type': 'application/json' } })),
+    readApiResponse(new Response('{"error":"Please sign in again."}', { status: 401, headers: { 'content-type': 'application/json' } })),
     error => error.status === 401,
   );
   assert.equal(await readApiResponse(new Response(null, { status: 204 })), null);
@@ -179,7 +179,7 @@ test('SQL Editor migrations and the Vercel function share the real database cont
     const result = await request('/api/auth/me');
     assert.equal(result.status, 503);
     assert.match(result.headers.get('content-type'), /application\/json/);
-    assert.match((await result.json()).error, /migrasi Supabase/);
+    assert.match((await result.json()).error, /Supabase migrations/);
     assert.equal(opens, 1);
   });
   await t.test('SQL Editor file is repeatable and compatible with subsequent CLI migrations', async () => {
@@ -235,7 +235,7 @@ test('SQL Editor migrations and the Vercel function share the real database cont
       body: { email: 'new@example.test' },
     });
     assert.equal(invitation.status, 503);
-    assert.match((await invitation.json()).error, /SMTP/);
+    assert.match((await invitation.json()).error, /Email delivery is disabled/);
     const forgot = await request('/api/auth/forgot-password', { method: 'POST', body: { email: 'vercel-owner@example.test' } });
     assert.equal(forgot.status, 503);
     assert.equal((await pool.query('SELECT count(*) FROM mail_outbox')).rows[0].count, '0');
@@ -247,6 +247,6 @@ test('SQL Editor migrations and the Vercel function share the real database cont
     assert.deepEqual(await cron.json(), { processed: 0, reminders: 0, queued: 0 });
     const unknown = await request('/api/nonexistent');
     assert.equal(unknown.status, 404);
-    assert.equal((await unknown.json()).error, 'Endpoint tidak ditemukan.');
+    assert.equal((await unknown.json()).error, 'Endpoint not found.');
   });
 });

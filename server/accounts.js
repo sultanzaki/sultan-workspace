@@ -32,16 +32,16 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
   const secureLimit = req => limit(pool, `account-sensitive:${req.session.user_id}`, 15, 900);
   async function lockedUser(db, user) {
     const row = (await db.query('SELECT * FROM users WHERE id=$1 AND disabled_at IS NULL FOR UPDATE', [user])).rows[0];
-    if (!row) fail(401, 'Silakan login kembali.');
+    if (!row) fail(401, 'Please sign in again.');
     return row;
   }
   async function reauthenticate(db, req, input, alwaysMfa = false) {
     const user = await lockedUser(db, req.session.user_id);
-    if (!(await verifyPassword(input.currentPassword, user.password_hash))) fail(401, 'Password saat ini tidak sesuai.');
+    if (!(await verifyPassword(input.currentPassword, user.password_hash))) fail(401, 'Incorrect current password.');
     const security = (await db.query('SELECT enabled FROM user_security WHERE user_id=$1', [user.id])).rows[0];
     const recent = req.session.mfa_verified_at && Date.now() - new Date(req.session.mfa_verified_at).getTime() < 300000;
     if (security?.enabled && (alwaysMfa || !recent) && !(await verifyFactor(db, user.id, input.code, config)))
-      fail(401, 'Kode 2FA atau recovery code tidak valid atau sudah digunakan.');
+      fail(401, 'The two-factor or recovery code is invalid or has already been used.');
     return user;
   }
   app.post('/api/auth/mfa/login', async (req, res) => {
@@ -53,13 +53,13 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
     await limit(pool, `mfa-challenge:${digest(input.challenge)}`, 5, 300);
     const result = await transaction(pool, async db => {
       const preview = (await db.query('SELECT user_id FROM login_challenges WHERE token_hash=$1 AND expires_at>now()', [digest(input.challenge)])).rows[0];
-      if (!preview) fail(401, 'Verifikasi sudah kedaluwarsa. Login kembali.');
+      if (!preview) fail(401, 'Verification has expired. Sign in again.');
       const user = await lockedUser(db, preview.user_id);
       const challenge = (await db.query('SELECT * FROM login_challenges WHERE token_hash=$1 AND expires_at>now() FOR UPDATE', [digest(input.challenge)]))
         .rows[0];
       const security = (await db.query('SELECT enabled FROM user_security WHERE user_id=$1', [user.id])).rows[0];
-      if (!challenge || challenge.password_hash !== user.password_hash || !security?.enabled) fail(401, 'Verifikasi sudah berubah. Login kembali.');
-      if (!(await verifyFactor(db, user.id, input.code, config))) fail(401, 'Kode 2FA atau recovery code tidak valid atau sudah digunakan.');
+      if (!challenge || challenge.password_hash !== user.password_hash || !security?.enabled) fail(401, 'Verification has changed. Sign in again.');
+      if (!(await verifyFactor(db, user.id, input.code, config))) fail(401, 'The two-factor or recovery code is invalid or has already been used.');
       await db.query('DELETE FROM login_challenges WHERE token_hash=$1', [digest(input.challenge)]);
       return { user, session: await issueSession(db, req, user.id, challenge.remember, new Date()) };
     });
@@ -96,12 +96,12 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
         .strict()
         .parse(req.body),
       bytes = Buffer.from(input.content, 'base64');
-    if (!bytes.length || bytes.length > 262144 || bytes.toString('base64') !== input.content) fail(400, 'Foto harus berupa gambar maksimal 256 KB.');
+    if (!bytes.length || bytes.length > 262144 || bytes.toString('base64') !== input.content) fail(400, 'The photo must be an image no larger than 256 KB.');
     let mime;
     if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) mime = 'image/png';
     else if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) mime = 'image/jpeg';
     else if (bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP') mime = 'image/webp';
-    if (!mime) fail(415, 'Gunakan foto PNG, JPEG, atau WebP.');
+    if (!mime) fail(415, 'Use a PNG, JPEG, or WebP image.');
     await pool.query('UPDATE users SET avatar=$1,avatar_mime=$2,avatar_updated_at=now() WHERE id=$3', [bytes, mime, req.session.user_id]);
     res.json({ ok: true });
   });
@@ -129,16 +129,16 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
             break;
           }
         }
-      if (!allowed) fail(404, 'Foto tidak ditemukan.');
+      if (!allowed) fail(404, 'Photo not found.');
     }
     const user = (await pool.query('SELECT avatar,avatar_mime FROM users WHERE id=$1 AND disabled_at IS NULL', [target])).rows[0];
-    if (!user?.avatar) fail(404, 'Foto tidak ditemukan.');
+    if (!user?.avatar) fail(404, 'Photo not found.');
     res.type(user.avatar_mime).set('X-Content-Type-Options', 'nosniff').send(user.avatar);
   });
   app.post('/api/account/password', authenticated, async (req, res) => {
     const input = sensitive.extend({ newPassword: password }).strict().parse(req.body);
     await secureLimit(req);
-    if (input.newPassword === input.currentPassword) fail(400, 'Gunakan password baru yang berbeda.');
+    if (input.newPassword === input.currentPassword) fail(400, 'Choose a different new password.');
     const encoded = await hashPassword(input.newPassword);
     await transaction(pool, async db => {
       await reauthenticate(db, req, input);
@@ -146,10 +146,10 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
       await db.query('DELETE FROM sessions WHERE user_id=$1', [req.session.user_id]);
       await db.query('DELETE FROM login_challenges WHERE user_id=$1', [req.session.user_id]);
       await db.query('DELETE FROM password_resets WHERE user_id=$1', [req.session.user_id]);
-      await queueSecurityMail(db, config, req.session.user_id, 'Password akun telah diganti. Seluruh sesi login lama dicabut.');
+      await queueSecurityMail(db, config, req.session.user_id, 'Your password has changed. All previous sessions have been revoked.');
     });
     clearSession(res);
-    res.json({ message: 'Password diganti. Login kembali dengan password baru.' });
+    res.json({ message: 'Password changed. Sign in with your new password.' });
   });
   app.get('/api/account/sessions', authenticated, async (req, res) => {
     const rows = (
@@ -162,7 +162,7 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
   });
   app.delete('/api/account/sessions/:id', authenticated, async (req, res) => {
     const result = await pool.query('DELETE FROM sessions WHERE id=$1 AND user_id=$2 RETURNING token_hash', [uuid.parse(req.params.id), req.session.user_id]);
-    if (!result.rowCount) fail(404, 'Sesi tidak ditemukan.');
+    if (!result.rowCount) fail(404, 'Session not found.');
     const current = result.rows[0].token_hash === req.session.token_hash;
     if (current) clearSession(res);
     res.json({ current });
@@ -176,7 +176,8 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
     await secureLimit(req);
     const result = await transaction(pool, async db => {
       const user = await reauthenticate(db, req, input);
-      if ((await db.query('SELECT enabled FROM user_security WHERE user_id=$1', [user.id])).rows[0]?.enabled) fail(409, '2FA sudah aktif.');
+      if ((await db.query('SELECT enabled FROM user_security WHERE user_id=$1', [user.id])).rows[0]?.enabled)
+        fail(409, 'Two-factor authentication is already enabled.');
       const secret = newSecret(),
         encrypted = encryptSecret(secret, config, user.id);
       await db.query(
@@ -200,19 +201,19 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
     const codes = await transaction(pool, async db => {
       await lockedUser(db, req.session.user_id);
       const security = (await db.query('SELECT * FROM user_security WHERE user_id=$1 AND pending_until>now() FOR UPDATE', [req.session.user_id])).rows[0];
-      if (!security?.pending_secret || security.enabled) fail(400, 'Setup 2FA sudah kedaluwarsa. Mulai lagi.');
+      if (!security?.pending_secret || security.enabled) fail(400, 'Two-factor setup has expired. Start again.');
       const secret = decryptSecret(security.pending_secret, config, req.session.user_id);
       await db.query('UPDATE user_security SET enabled=true,secret=$1,last_counter=-1 WHERE user_id=$2', [
         encryptSecret(secret, config, req.session.user_id),
         req.session.user_id,
       ]);
-      if (!(await verifyFactor(db, req.session.user_id, code, config))) fail(401, 'Kode authenticator tidak valid.');
+      if (!(await verifyFactor(db, req.session.user_id, code, config))) fail(401, 'Invalid authenticator code.');
       await db.query('UPDATE user_security SET pending_secret=NULL,pending_until=NULL WHERE user_id=$1', [req.session.user_id]);
       const updated = await db.query('UPDATE sessions SET mfa_verified_at=now() WHERE token_hash=$1 RETURNING id', [req.session.token_hash]);
-      if (!updated.rowCount) fail(401, 'Silakan login kembali.');
+      if (!updated.rowCount) fail(401, 'Please sign in again.');
       await db.query('DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2', [req.session.user_id, req.session.token_hash]);
       await db.query('DELETE FROM login_challenges WHERE user_id=$1', [req.session.user_id]);
-      await queueSecurityMail(db, config, req.session.user_id, 'Autentikasi dua langkah (2FA) telah diaktifkan.');
+      await queueSecurityMail(db, config, req.session.user_id, 'Two-factor authentication (2FA) has been enabled.');
       return recoveryCodes(db, req.session.user_id);
     });
     res.json({ recoveryCodes: codes });
@@ -223,9 +224,10 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
       await secureLimit(req);
       const result = await transaction(pool, async db => {
         const user = await reauthenticate(db, req, input, true);
-        if (!(await db.query('SELECT enabled FROM user_security WHERE user_id=$1', [user.id])).rows[0]?.enabled) fail(400, '2FA belum aktif.');
+        if (!(await db.query('SELECT enabled FROM user_security WHERE user_id=$1', [user.id])).rows[0]?.enabled)
+          fail(400, 'Two-factor authentication is not enabled.');
         if (action === 'recovery') {
-          await queueSecurityMail(db, config, user.id, 'Recovery code 2FA dibuat ulang. Kode pemulihan sebelumnya tidak berlaku.');
+          await queueSecurityMail(db, config, user.id, 'Two-factor recovery codes regenerated. Previous recovery codes are no longer valid.');
           return { recoveryCodes: await recoveryCodes(db, user.id) };
         }
         await db.query('DELETE FROM user_security WHERE user_id=$1', [user.id]);
@@ -233,7 +235,7 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
         await db.query('DELETE FROM login_challenges WHERE user_id=$1', [user.id]);
         await db.query('DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2', [user.id, req.session.token_hash]);
         await db.query('UPDATE sessions SET mfa_verified_at=NULL WHERE token_hash=$1', [req.session.token_hash]);
-        await queueSecurityMail(db, config, user.id, 'Autentikasi dua langkah (2FA) telah dinonaktifkan.');
+        await queueSecurityMail(db, config, user.id, 'Two-factor authentication (2FA) has been disabled.');
         return { ok: true };
       });
       res.json(result);

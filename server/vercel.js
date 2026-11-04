@@ -62,7 +62,7 @@ export function createVercelHandler({
       res.statusCode = 400;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.setHeader('Cache-Control', 'no-store');
-      res.end(JSON.stringify({ error: 'Alamat API tidak valid.' }));
+      res.end(JSON.stringify({ error: 'Invalid API address.' }));
       return;
     }
     try {

@@ -42,7 +42,7 @@ export function modalHtml(m) {
     case 'nativeCommentEdit':
       return wrap(
         '',
-        `${H('Edit komentar')}<div class="modal-b"><label class="label" for="comment-edit">Komentar</label><textarea class="input" id="comment-edit" data-in="nativeCommentEdit" maxlength="5000" rows="5" autofocus>${esc(m.text)}</textarea></div><div class="modal-f"><span class="sp"></span><button class="btn btn-secondary" data-a="closeModal">Batal</button><button class="btn btn-primary" data-a="nativeSaveComment" ${m.saving ? 'disabled' : ''}>${m.saving ? 'Menyimpan…' : 'Simpan komentar'}</button></div>`,
+        `${H('Edit comment')}<div class="modal-b"><label class="label" for="comment-edit">Comment</label><textarea class="input" id="comment-edit" data-in="nativeCommentEdit" maxlength="5000" rows="5" autofocus>${esc(m.text)}</textarea></div><div class="modal-f"><span class="sp"></span><button class="btn btn-secondary" data-a="closeModal">Cancel</button><button class="btn btn-primary" data-a="nativeSaveComment" ${m.saving ? 'disabled' : ''}>${m.saving ? 'Saving…' : 'Save comment'}</button></div>`,
       );
     case 'task':
       return wrap('', taskModal(m, H));
@@ -192,20 +192,20 @@ export function shareModal(m, H) {
   const session = getWorkspaceSession();
   if (session) {
     const manager = projectAllows(p, session.user.id, session.workspace.role, 'manage');
-    return `${H(`Akses proyek “${esc(p.name)}”`)}
+    return `${H(`Project access for “${esc(p.name)}”`)}
       <div class="modal-b">
-        <label class="row"><input type="checkbox" data-in="nativeProjectPrivate" data-id="${p.id}" ${p.private ? 'checked' : ''} ${manager ? '' : 'disabled'}>Proyek privat</label>
-        <p class="muted">${p.private ? 'Hanya anggota terpilih, owner, dan admin workspace yang dapat membuka proyek ini.' : 'Anggota internal mewarisi akses edit. Guest perlu ditambahkan secara khusus. Izin khusus di bawah menggantikan akses bawaan.'}</p>
-        <div class="eyebrow">Anggota proyek</div>
+        <label class="row"><input type="checkbox" data-in="nativeProjectPrivate" data-id="${p.id}" ${p.private ? 'checked' : ''} ${manager ? '' : 'disabled'}>Private project</label>
+        <p class="muted">${p.private ? 'Only selected members, workspace owners, and administrators can access this project.' : 'Internal members inherit edit access. Guests must be added explicitly. Specific permissions below override the default access.'}</p>
+        <div class="eyebrow">Project members</div>
         ${D()
           .members.filter(member => member.status === 'active')
           .map(
             member =>
-              `<div class="row" style="padding:8px 0"><input type="checkbox" data-in="nativeProjectMember" data-id="${p.id}" data-mid="${member.id}" ${p.members.includes(member.id) ? 'checked' : ''} ${manager && member.id !== p.lead ? '' : 'disabled'}>${av(member.id, 'sm', false)}<span class="grow">${esc(member.name)}</span><span class="faint">${member.id === p.lead ? 'Project lead' : esc(member.role)}</span>${p.members.includes(member.id) && !['Owner', 'Admin'].includes(member.role) && member.id !== p.lead ? `<select class="select" data-in="nativeProjectPermission" data-id="${p.id}" data-user="${member.id}" aria-label="Izin ${esc(member.name)}" ${manager ? '' : 'disabled'}>${['viewer', 'commenter', 'editor'].map(level => `<option value="${level}" ${level === (p.permissions?.[member.id] || (member.role === 'Guest' ? 'viewer' : 'editor')) ? 'selected' : ''}>${level}</option>`).join('')}</select>` : ''}</div>`,
+              `<div class="row" style="padding:8px 0"><input type="checkbox" data-in="nativeProjectMember" data-id="${p.id}" data-mid="${member.id}" ${p.members.includes(member.id) ? 'checked' : ''} ${manager && member.id !== p.lead ? '' : 'disabled'}>${av(member.id, 'sm', false)}<span class="grow">${esc(member.name)}</span><span class="faint">${member.id === p.lead ? 'Project lead' : esc(member.role)}</span>${p.members.includes(member.id) && !['Owner', 'Admin'].includes(member.role) && member.id !== p.lead ? `<select class="select" data-in="nativeProjectPermission" data-id="${p.id}" data-user="${member.id}" aria-label="Permission ${esc(member.name)}" ${manager ? '' : 'disabled'}>${['viewer', 'commenter', 'editor'].map(level => `<option value="${level}" ${level === (p.permissions?.[member.id] || (member.role === 'Guest' ? 'viewer' : 'editor')) ? 'selected' : ''}>${level}</option>`).join('')}</select>` : ''}</div>`,
           )
           .join('')}
-        ${manager && (['owner', 'admin'].includes(session.workspace.role) || S.data.ws.settings.leadCanInviteGuests) ? `<button class="btn btn-secondary" data-a="nativeInvite" data-project="${p.id}">Undang guest</button>` : ''}${!manager ? `<button class="btn btn-secondary" data-a="nativeRequestAccess" data-id="${p.id}">Minta perubahan akses</button>` : ''}
-      </div><div class="modal-f"><span class="sp"></span><button class="btn btn-primary" data-a="closeModal">Selesai</button></div>`;
+        ${manager && (['owner', 'admin'].includes(session.workspace.role) || S.data.ws.settings.leadCanInviteGuests) ? `<button class="btn btn-secondary" data-a="nativeInvite" data-project="${p.id}">Invite guest</button>` : ''}${!manager ? `<button class="btn btn-secondary" data-a="nativeRequestAccess" data-id="${p.id}">Request access change</button>` : ''}
+      </div><div class="modal-f"><span class="sp"></span><button class="btn btn-primary" data-a="closeModal">Done</button></div>`;
   }
   p.perms = p.perms || {};
   p.access = p.access || 'workspace';
@@ -317,7 +317,7 @@ export function filePreviewModal(m, H) {
   const f = m.file;
   const t = FT[f.type] || FT.other;
   if (f.url)
-    return `${H(esc(f.name), `${t.n} · ${f.size}`)}<div class="modal-b">${f.preview ? `<img src="${esc(f.preview)}" alt="${esc(f.name)}" style="display:block;max-width:100%;max-height:65vh;margin:auto;object-fit:contain">` : '<p>Unduh file asli untuk membukanya di aplikasi yang sesuai.</p>'}</div><div class="modal-f"><button class="btn btn-secondary" data-a="copyLink" data-fid="${f.id}">Copy link</button><span class="sp"></span><button class="btn btn-primary" data-a="nativeDownloadFile" data-id="${f.id}">Unduh file</button><button class="btn btn-secondary" data-a="closeModal">Close</button></div>`;
+    return `${H(esc(f.name), `${t.n} · ${f.size}`)}<div class="modal-b">${f.preview ? `<img src="${esc(f.preview)}" alt="${esc(f.name)}" style="display:block;max-width:100%;max-height:65vh;margin:auto;object-fit:contain">` : '<p>Download the original file to open it in a compatible application.</p>'}</div><div class="modal-f"><button class="btn btn-secondary" data-a="copyLink" data-fid="${f.id}">Copy link</button><span class="sp"></span><button class="btn btn-primary" data-a="nativeDownloadFile" data-id="${f.id}">Download file</button><button class="btn btn-secondary" data-a="closeModal">Close</button></div>`;
   return `${H(esc(f.name), `${t.n} · ${f.size} · Uploaded by ${esc(mem(f.by)?.name || 'you')} ${ago(f.at)}`)}
   <div class="modal-b"><div style="border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden">${filePrev(f).replace('class="fprev"', 'class="fprev" style="aspect-ratio:16/9"')}</div>
   ${m.tid ? `<div class="row faint" style="font-size:12.5px">${ic('link', 13)}Attached to <button class="link" data-a="openTask" data-id="${m.tid}">${esc(task(m.tid)?.title)}</button></div>` : ''}</div>

@@ -5,7 +5,7 @@ const stable = value =>
     item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item,
   );
 export const syncStatusText = (state, message) =>
-  state === 'saved' ? '' : message || { saving: 'Menyimpan…', conflict: 'Konflik perubahan', error: 'Perubahan belum tersimpan' }[state] || '';
+  state === 'saved' ? '' : message || { saving: 'Saving…', conflict: 'Conflicting changes', error: 'Changes have not been saved' }[state] || '';
 export function contentOperations(before, after) {
   const operations = [];
   for (const [entity, key] of Object.entries(collections)) {
@@ -86,7 +86,9 @@ export function createContentSync({ initial, capture, apply, request, status, ba
             apply({ ...result, preferences });
             continue;
           }
-          blocked = Object.assign(new Error('Data telah berubah saat Anda mengedit. Muat data terbaru; draft Anda tetap disimpan.'), { status: 409 });
+          blocked = Object.assign(new Error('Data changed while you were editing. Refresh to review the latest data; your draft is preserved.'), {
+            status: 409,
+          });
           backup(capture());
           status('conflict', blocked.message);
           throw blocked;
@@ -108,7 +110,7 @@ export function createContentSync({ initial, capture, apply, request, status, ba
     if (force && (blocked || dirty())) backup(capture());
     const result = await request('GET');
     if (pending || stable(capture()) !== atStart) {
-      if (force) throw new Error('Ada perubahan baru selama memuat data. Simpan atau unduh draft dahulu, lalu coba lagi.');
+      if (force) throw new Error('New changes were made while loading. Save or download your draft, then try again.');
       return;
     }
     if (!force && (pending || blocked || stable(capture()) !== atStart)) return;

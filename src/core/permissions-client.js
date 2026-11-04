@@ -87,7 +87,7 @@ export function initPermissions({ session }) {
       handlers[name] = (el, event) => {
         if (!allowed(name, el, kind)) {
           event?.preventDefault?.();
-          toast('Akses Anda belum mengizinkan perubahan ini. Minta izin kepada lead proyek.', { kind: 'info' });
+          toast('You do not have permission to make this change. Ask the project lead for access.', { kind: 'info' });
           return;
         }
         return handler(el, event);

@@ -95,65 +95,70 @@ export function settingsBody(sec, title) {
           ? ['push_assign', 'push_status', 'push_due']
           : ['push_mention', 'push_assign', 'push_comment', 'push_status', 'push_due'];
     const labels = {
-      push_mention: 'Mention dalam komentar',
-      push_assign: 'Penugasan task',
-      push_comment: 'Komentar dalam percakapan Anda',
-      push_status: 'Perubahan status task Anda',
-      push_due: 'Pengingat deadline',
+      push_mention: 'Mentions in comments',
+      push_assign: 'Task assignments',
+      push_comment: 'Comments in your conversations',
+      push_status: 'Status changes to your tasks',
+      push_due: 'Due date reminders',
     };
-    return `<h1>Notifikasi dalam aplikasi</h1><p class="lead">Notifikasi pribadi muncul di Inbox dan Notifications. Pengaturan ini disimpan untuk akun Anda.</p>${keys.map(key => srow(labels[key], key === 'push_due' ? 'Sehari sebelum deadline, pada hari deadline, dan saat terlambat.' : '', tog(key, D().notifPrefs[key] !== false, 'np'))).join('')}`;
+    return `<h1>In-app notifications</h1><p class="lead">Personal notifications appear in Inbox and Notifications. These settings are saved for your account.</p>${keys.map(key => srow(labels[key], key === 'push_due' ? 'The day before a deadline, on the due date, and when overdue.' : '', tog(key, D().notifPrefs[key] !== false, 'np'))).join('')}`;
   }
   if (getWorkspaceSession() && sec === 'notif-email') {
     const session = getWorkspaceSession(),
       manager = ['owner', 'admin'].includes(session.workspace.role);
     const labels = {
       email_mention: 'Mention',
-      email_assign: 'Penugasan task',
-      email_comment: 'Komentar percakapan',
-      email_status: 'Perubahan status task',
-      email_due: 'Pengingat deadline',
-      email_digest: 'Ringkasan harian',
+      email_assign: 'Task assignments',
+      email_comment: 'Conversation comments',
+      email_status: 'Task status changes',
+      email_due: 'Due date reminders',
+      email_digest: 'Daily digest',
     };
     const slot = new Date();
     slot.setUTCHours(0, 15, 0, 0);
-    const clock = new Intl.DateTimeFormat('id-ID', { timeZone: S.prefs.tz || 'UTC', hour: '2-digit', minute: '2-digit', hour12: false }).format(slot);
-    const kinds = { invitation: 'Undangan', reset: 'Pemulihan akun', notification: 'Notifikasi', digest: 'Ringkasan harian', security: 'Keamanan akun' };
+    const clock = new Intl.DateTimeFormat(document.documentElement.lang === 'id' ? 'id-ID' : 'en-US', {
+      timeZone: S.prefs.tz || 'UTC',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(slot);
+    const kinds = { invitation: 'Invitation', reset: 'Account recovery', notification: 'Notification', digest: 'Daily digest', security: 'Account security' };
     const errors = {
-      network_timeout: 'Layanan email belum merespons; akan dicoba kembali.',
-      rate_limited: 'Batas pengiriman provider tercapai.',
-      provider_auth: 'Kredensial layanan email perlu diperiksa.',
-      provider_unavailable: 'Layanan email sementara tidak tersedia.',
-      provider_rejected: 'Provider menolak pesan. Periksa pengirim dan alamat penerima.',
-      smtp_failed: 'Koneksi SMTP belum berhasil.',
-      expired: 'Batas waktu atau percobaan pengiriman tercapai.',
-      bounced: 'Alamat penerima ditolak oleh layanan email.',
-      complained: 'Penerima menandai email sebagai spam.',
-      failed: 'Pengiriman ditolak provider.',
-      delivery_failed: 'Pengiriman belum berhasil.',
+      network_timeout: 'The email provider did not respond. Delivery will be retried.',
+      rate_limited: "The email provider's sending limit was reached.",
+      provider_auth: 'Check the email provider credentials.',
+      provider_unavailable: 'The email service is temporarily unavailable.',
+      provider_rejected: 'The email provider rejected the message. Check the sender and recipient addresses.',
+      smtp_failed: 'Could not connect to the SMTP server.',
+      expired: 'The delivery timeout or retry limit was reached.',
+      bounced: 'The email provider rejected the recipient address.',
+      complained: 'The recipient marked this email as spam.',
+      failed: 'The email provider rejected delivery.',
+      delivery_failed: 'Delivery failed.',
     };
     const statuses = {
-      queued: 'Menunggu pengiriman',
-      accepted: 'Diterima layanan email',
-      delivered: 'Terkirim',
-      delayed: 'Tertunda',
-      failed: 'Gagal',
-      bounced: 'Alamat ditolak',
-      complained: 'Ditandai spam',
-      cancelled: 'Dibatalkan',
+      queued: 'Awaiting delivery',
+      accepted: 'Accepted by email provider',
+      delivered: 'Delivered',
+      delayed: 'Delayed',
+      failed: 'Failed',
+      bounced: 'Address rejected',
+      complained: 'Marked as spam',
+      cancelled: 'Cancelled',
     };
-    return `<h1>Email</h1><p class="lead">${session.features.email ? 'Pengiriman email telah diaktifkan.' : 'Admin belum mengaktifkan layanan email. Preferensi tetap dapat disimpan.'} Pengaturan ini terpisah dari notifikasi aplikasi.</p>${Object.entries(
+    return `<h1>Email</h1><p class="lead">${session.features.email ? 'Email delivery is enabled.' : 'Email delivery is not enabled yet. You can still save your preferences.'} These settings are separate from in-app notifications.</p>${Object.entries(
       EMAIL_DEFAULTS,
     )
       .map(([key, defaultValue]) =>
         srow(
           labels[key],
-          key === 'email_digest' ? `Aktivitas pada hari kerja, sekitar ${clock} (${esc(S.prefs.tz)}).` : '',
+          key === 'email_digest' ? `Weekday activity, around ${clock} (${esc(S.prefs.tz)}).` : '',
           tog(key, D().notifPrefs[key] ?? defaultValue, 'np'),
         ),
       )
       .join(
         '',
-      )}<p class="faint">Undangan, reset password, dan pemberitahuan perubahan keamanan tetap tersedia terlepas dari pilihan notifikasi aktivitas.</p>${manager ? `<div class="sblock"><h2>Status pengiriman email</h2><button class="btn btn-secondary" data-a="nativeLoadMail">Muat status email</button><div class="stack" style="margin-top:12px">${(session.mailStatus || []).map(mail => `<div class="panel" style="padding:12px;overflow-wrap:anywhere"><div>${esc(mail.recipient)} · ${kinds[mail.kind] || 'Email'} · ${statuses[mail.delivery_status] || 'Menunggu'}</div>${mail.error_code ? `<p class="faint">${esc(errors[mail.error_code] || 'Pengiriman perlu diperiksa.')}</p>` : ''}${mail.delivery_status === 'queued' && mail.attempts ? `<button class="btn btn-sm" data-a="nativeRetryMail" data-id="${mail.id}">Coba pengiriman lagi</button>` : ''}</div>`).join('') || (session.mailLoaded ? '<p>Belum ada pengiriman.</p>' : '<p>Memuat status email…</p>')}</div></div>` : ''}`;
+      )}<p class="faint">Invitations, password resets, and security notifications remain enabled regardless of your activity notification preferences.</p>${manager ? `<div class="sblock"><h2>Email delivery status</h2><button class="btn btn-secondary" data-a="nativeLoadMail">Load email status</button><div class="stack" style="margin-top:12px">${(session.mailStatus || []).map(mail => `<div class="panel" style="padding:12px;overflow-wrap:anywhere"><div>${esc(mail.recipient)} · ${kinds[mail.kind] || 'Email'} · ${statuses[mail.delivery_status] || 'Pending'}</div>${mail.error_code ? `<p class="faint">${esc(errors[mail.error_code] || 'Check the delivery status.')}</p>` : ''}${mail.delivery_status === 'queued' && mail.attempts ? `<button class="btn btn-sm" data-a="nativeRetryMail" data-id="${mail.id}">Retry delivery</button>` : ''}</div>`).join('') || (session.mailLoaded ? '<p>No deliveries yet.</p>' : '<p>Loading email status…</p>')}</div></div>` : ''}`;
   }
   if (
     getWorkspaceSession() &&
@@ -172,7 +177,7 @@ export function settingsBody(sec, title) {
       'permissions',
     ].includes(sec)
   ) {
-    return `<h1>${title}</h1><p class="lead">Bagian ini belum terhubung ke layanan akun. Pengaturan anggota dan tim tersedia melalui Kelola workspace.</p><button class="btn btn-secondary" data-a="nativeManage">Kelola workspace</button>`;
+    return `<h1>${title}</h1><p class="lead">Manage members and teams in workspace settings.</p><button class="btn btn-secondary" data-a="nativeManage">Manage workspace</button>`;
   }
   const P = S.prefs;
   const d = D();

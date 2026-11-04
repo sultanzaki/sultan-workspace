@@ -20,14 +20,13 @@ export function verifyResendSignature(body, headers, secret, now = Date.now()) {
 }
 export function resendWebhook(pool, config) {
   return async (req, res) => {
-    if (!config.RESEND_WEBHOOK_SECRET) fail(404, 'Webhook belum diaktifkan.');
-    if (!Buffer.isBuffer(req.body) || !verifyResendSignature(req.body, req.headers, config.RESEND_WEBHOOK_SECRET))
-      fail(401, 'Tanda tangan webhook tidak valid.');
+    if (!config.RESEND_WEBHOOK_SECRET) fail(404, 'Webhooks are not enabled.');
+    if (!Buffer.isBuffer(req.body) || !verifyResendSignature(req.body, req.headers, config.RESEND_WEBHOOK_SECRET)) fail(401, 'Invalid webhook signature.');
     let event;
     try {
       event = JSON.parse(req.body.toString('utf8'));
     } catch {
-      fail(400, 'Payload tidak valid.');
+      fail(400, 'Invalid payload.');
     }
     const states = {
       'email.delivered': 'delivered',
@@ -57,7 +56,7 @@ export function resendWebhook(pool, config) {
           status,
         ]);
     });
-    if (pending) return res.status(503).json({ error: 'Pengiriman sedang dicatat. Ulangi webhook.' });
+    if (pending) return res.status(503).json({ error: 'Delivery is being recorded. Retry the webhook.' });
     res.json({ ok: true });
   };
 }
@@ -69,7 +68,7 @@ export function registerEmailRoutes(app, pool, { authenticated }) {
         [digest(raw)],
       )
     ).rows[0];
-    if (!row) fail(400, 'Link pengaturan email sudah tidak berlaku. Login untuk mengubah preferensi email.');
+    if (!row) fail(400, 'This email settings link has expired. Sign in to change your email preferences.');
     if (update) {
       await db.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [row.workspace_id]);
       const keys = Object.fromEntries(Object.keys(EMAIL_DEFAULTS).map(key => [key, false]));
@@ -90,7 +89,7 @@ export function registerEmailRoutes(app, pool, { authenticated }) {
     const { token } = z.object({ token: tokenSchema }).strict().parse(req.body);
     await limit(pool, `unsubscribe:${req.ip}`, 30, 900);
     await transaction(pool, db => unsubscribe(db, token, true));
-    res.json({ message: 'Email aktivitas workspace ini dinonaktifkan. Email keamanan dan undangan tetap tersedia.' });
+    res.json({ message: 'Activity emails are disabled for this workspace. Security emails and invitations remain enabled.' });
   });
   app.post('/api/workspaces/:ws/mail/:id/retry', authenticated, async (req, res) => {
     await limit(pool, `retry-mail:${req.session.user_id}`, 20, 900);
@@ -103,8 +102,8 @@ export function registerEmailRoutes(app, pool, { authenticated }) {
           [id, req.params.ws],
         )
       ).rows[0];
-      if (!row) fail(409, 'Pesan tidak dapat dicoba ulang. Buat undangan atau permintaan reset baru jika diperlukan.');
+      if (!row) fail(409, 'This message cannot be retried. Create a new invitation or password reset request if needed.');
     });
-    res.json({ message: 'Pesan dijadwalkan untuk dicoba kembali.' });
+    res.json({ message: 'Message scheduled for retry.' });
   });
 }

@@ -141,7 +141,7 @@ export async function dueReminders(db, workspace, { now = new Date(), force = fa
       task: task.id,
       kind: 'update',
       preference: 'push_due',
-      message: { overdue: 'melewati deadline', today: 'jatuh tempo hari ini', tomorrow: 'jatuh tempo besok' }[kind],
+      message: { overdue: 'is overdue', today: 'is due today', tomorrow: 'is due tomorrow' }[kind],
       snippet: `Deadline: ${due}`,
       event: `deadline:${task.id}:${due}:${kind}`,
     });

@@ -25,7 +25,7 @@ test('native authentication and workspace authorization against PostgreSQL', asy
   t.after(() => pool.end());
   await pool.query('DROP SCHEMA IF EXISTS app_private CASCADE');
   await migrate(pool);
-  const first = await bootstrap(pool, { email: 'OWNER@example.test', name: 'Owner', password: ownerPassword, workspace: 'Tim utama' });
+  const first = await bootstrap(pool, { email: 'OWNER@example.test', name: 'Owner', password: ownerPassword, workspace: 'Team utama' });
   const app = await createApp(pool, config);
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
@@ -69,7 +69,10 @@ test('native authentication and workspace authorization against PostgreSQL', asy
     await migrate(pool);
     const result = await pool.query("SELECT nspacl::text AS acl FROM pg_namespace WHERE nspname='app_private'");
     assert.ok(!result.rows[0].acl.includes('=U/'));
-    await assert.rejects(bootstrap(pool, { email: 'other@example.test', name: 'Other', password: ownerPassword, workspace: 'Other' }), /Bootstrap sudah/);
+    await assert.rejects(
+      bootstrap(pool, { email: 'other@example.test', name: 'Other', password: ownerPassword, workspace: 'Other' }),
+      /Setup is already complete/,
+    );
   });
   await t.test('requires login and rejects public registration and bad credentials', async () => {
     assert.equal((await request('/auth/me')).status, 401);
@@ -78,7 +81,7 @@ test('native authentication and workspace authorization against PostgreSQL', asy
     for (const email of ['missing@example.test', 'owner@example.test']) {
       const result = await request('/auth/login', { method: 'POST', body: { email, password: 'incorrect-password' } });
       assert.equal(result.status, 401);
-      assert.equal(result.data.error, 'Email atau password tidak sesuai.');
+      assert.equal(result.data.error, 'Incorrect email or password.');
     }
     owner = await login('owner@example.test', ownerPassword);
     const raw = owner.cookie.split('=')[1];
@@ -97,8 +100,8 @@ test('native authentication and workspace authorization against PostgreSQL', asy
     const created = await request('/workspaces', { method: 'POST', actor: owner, body: { name: 'Workspace kedua' } });
     assert.equal(created.status, 201);
     ws2 = created.data.id;
-    assert.equal((await request(`/workspaces/${first.workspaceId}`, { method: 'PATCH', actor: owner, body: { name: 'Nama tim baru' } })).status, 204);
-    assert.equal((await request(`/workspaces/${first.workspaceId}`, { actor: owner })).data.name, 'Nama tim baru');
+    assert.equal((await request(`/workspaces/${first.workspaceId}`, { method: 'PATCH', actor: owner, body: { name: 'Team name baru' } })).status, 204);
+    assert.equal((await request(`/workspaces/${first.workspaceId}`, { actor: owner })).data.name, 'Team name baru');
     assert.equal((await request(`/workspaces/${first.workspaceId}/teams`, { method: 'POST', actor: owner, body: { name: 'Engineering' } })).status, 201);
   });
   await t.test('invitation establishes a verified account, membership and HttpOnly session once', async () => {
@@ -294,7 +297,7 @@ test('native authentication and workspace authorization against PostgreSQL', asy
     try {
       const result = await fetch(`http://127.0.0.1:${second.address().port}/api/auth/me`, { headers: { cookie: owner.cookie } });
       assert.equal(result.status, 200);
-      assert.ok((await result.json()).workspaces.some(w => w.name === 'Nama tim baru'));
+      assert.ok((await result.json()).workspaces.some(w => w.name === 'Team name baru'));
     } finally {
       await new Promise(resolve => second.close(resolve));
     }

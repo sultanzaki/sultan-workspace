@@ -196,7 +196,7 @@ test('email jobs honor independent preferences, current permissions, idempotency
     await queueEmailJobs(pool);
     await drain();
     assert.equal(sent.length - before, 5);
-    assert.ok(sent.slice(before).every(m => m.html.includes('Berhenti berlangganan')));
+    assert.ok(sent.slice(before).every(m => m.html.includes('Unsubscribe')));
   });
   await t.test('concurrent workers and retries reuse a frozen payload; changes in access or preference cancel queued mail', async () => {
     await clear();
@@ -292,7 +292,7 @@ test('email jobs honor independent preferences, current permissions, idempotency
     const before = sent.length;
     await drain();
     assert.equal(sent.length - before, 1);
-    assert.match(sent.at(-1).subject, /Ringkasan harian/);
+    assert.match(sent.at(-1).subject, /Daily digest/);
     await clear();
     await prefs({ email_assign: false, email_digest: true }, { prefs: { tz: 'Asia/Jakarta' } });
     const hidden = await event();

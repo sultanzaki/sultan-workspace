@@ -115,5 +115,5 @@ export function filePrev(f) {
   return `<div class="fprev">${art}<span class="ext" style="--c:${t.c}">${esc(ext)}</span></div>`;
 }
 export function uploadStatus(upload) {
-  return `<div class="upl" role="status" style="margin-bottom:6px"><span class="grow"><b>${esc(upload.name)}</b><span class="faint" style="display:block">${upload.error ? esc(upload.error) : 'Mengunggah ke server…'}</span></span>${upload.error && !upload.uploading ? `<button class="btn btn-sm btn-secondary" data-a="nativeRetryUpload" data-id="${upload.id}">Coba upload lagi</button><button class="btn btn-sm btn-ghost" data-a="nativeDiscardUpload" data-id="${upload.id}">Tutup</button>` : ''}</div>`;
+  return `<div class="upl" role="status" style="margin-bottom:6px"><span class="grow"><b>${esc(upload.name)}</b><span class="faint" style="display:block">${upload.error ? esc(upload.error) : 'Uploading…'}</span></span>${upload.error && !upload.uploading ? `<button class="btn btn-sm btn-secondary" data-a="nativeRetryUpload" data-id="${upload.id}">Retry upload</button><button class="btn btn-sm btn-ghost" data-a="nativeDiscardUpload" data-id="${upload.id}">Close</button>` : ''}</div>`;
 }

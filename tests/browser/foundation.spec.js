@@ -4,6 +4,17 @@ import { testConfig } from '../database.js';
 import { readFile } from 'node:fs/promises';
 
 test.describe.configure({ mode: 'serial' });
+async function openSettings(page, section = 'members') {
+  await page.getByRole('navigation', { name: 'Main', exact: true }).locator('[data-r="settings"]').first().click();
+  await page.locator(`.set-nav [data-sec="${section}"]`).click();
+}
+async function signOut(page) {
+  const closeDrawer = page.locator('.drawer [data-a="closeDrawer"]');
+  if (await closeDrawer.count()) await closeDrawer.first().click();
+  await page.getByRole('button', { name: 'Account menu', exact: true }).click();
+  await page.locator('.pop [data-a="signOut"]').click();
+}
+
 async function drag(page, source, target) {
   await source.scrollIntoViewIfNeeded();
   await target.scrollIntoViewIfNeeded();
@@ -40,58 +51,58 @@ test('owner invites a member; member joins, reloads and logs out with no demo da
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
   await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
   await page.getByLabel('Password', { exact: true }).fill('incorrect');
-  await page.getByRole('button', { name: 'Login', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Email atau password tidak sesuai');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Incorrect email or password');
   await page.getByLabel('Password', { exact: true }).fill('browser-test-password-123');
-  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
   await page.goto('/?manage=1');
-  await expect(page.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Team browser', exact: true })).toBeVisible();
   await expect(page.getByText('Website Redesign')).toHaveCount(0);
   const ids = await page.locator('[id]').evaluateAll(elements => elements.map(element => element.id));
   expect(new Set(ids).size).toBe(ids.length);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
-  await page.getByLabel('Nama tim', { exact: true }).fill('Engineering');
-  await page.getByRole('button', { name: 'Buat tim', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Team browser', exact: true })).toBeVisible();
+  await page.getByLabel('Team name', { exact: true }).fill('Engineering');
+  await page.getByRole('button', { name: 'Create team', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Engineering', exact: true })).toBeVisible();
-  await page.getByLabel('Email penerima', { exact: true }).fill('member@example.test');
-  await page.getByRole('button', { name: 'Kirim undangan', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Undangan masuk antrean');
+  await page.getByLabel('Recipient email', { exact: true }).fill('member@example.test');
+  await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Invitation queued');
   const invite = await mailToken('member@example.test', 'invite');
   const memberContext = await browser.newContext({ baseURL: 'http://localhost:5173' });
   const memberPage = await memberContext.newPage();
   try {
     await memberPage.goto(`/#invite=${invite}`);
-    await expect(memberPage.getByRole('heading', { name: 'Bergabung ke Tim browser' })).toBeVisible();
+    await expect(memberPage.getByRole('heading', { name: 'Join Team browser' })).toBeVisible();
     expect(memberPage.url()).not.toContain(invite);
-    await memberPage.getByLabel('Nama lengkap').fill('<img src=x onerror=alert(1)>');
-    await memberPage.getByLabel('Password baru', { exact: true }).fill('member-browser-password-123');
+    await memberPage.getByLabel('Full name').fill('<img src=x onerror=alert(1)>');
+    await memberPage.getByLabel('New password', { exact: true }).fill('member-browser-password-123');
     const [accepted] = await Promise.all([
       memberPage.waitForResponse(response => response.url().endsWith('/api/auth/invitations/accept')),
-      memberPage.getByRole('button', { name: 'Terima undangan' }).click(),
+      memberPage.getByRole('button', { name: 'Accept invitation' }).click(),
     ]);
     expect(accepted.status(), await accepted.text()).toBe(201);
     await expect(memberPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
     await memberPage.goto('/?manage=1');
-    await expect(memberPage.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
+    await expect(memberPage.getByRole('heading', { name: 'Team browser', exact: true })).toBeVisible();
     await expect(memberPage.locator('img')).toHaveCount(0);
-    await expect(memberPage.getByRole('heading', { name: 'Undang anggota' })).toHaveCount(0);
-    await expect(memberPage.getByRole('button', { name: 'Buat tim', exact: true })).toHaveCount(0);
-    await expect(memberPage.getByText('Peran Anda:')).toContainText('member');
+    await expect(memberPage.getByRole('heading', { name: 'Invite member' })).toHaveCount(0);
+    await expect(memberPage.getByRole('button', { name: 'Create team', exact: true })).toHaveCount(0);
+    await expect(memberPage.getByText('Your role:')).toContainText('member');
     await memberPage.reload();
-    await expect(memberPage.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
-    await memberPage.getByRole('button', { name: 'Logout', exact: true }).click();
-    await expect(memberPage.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
+    await expect(memberPage.getByRole('heading', { name: 'Team browser', exact: true })).toBeVisible();
+    await memberPage.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await expect(memberPage.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
     await memberPage.reload();
-    await expect(memberPage.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
+    await expect(memberPage.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
   } finally {
     await memberContext.close();
   }
-  await page.getByRole('button', { name: 'Muat ulang', exact: true }).click();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'member@example.test', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -102,25 +113,25 @@ test('owner invites a member; member joins, reloads and logs out with no demo da
 
 test('password recovery changes credentials and the old password stops working', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Lupa password?' }).click();
+  await page.getByRole('button', { name: 'Forgot password?' }).click();
   await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
-  await page.getByRole('button', { name: 'Kirim instruksi reset' }).click();
-  await expect(page.getByRole('status')).toContainText('Jika akun terdaftar');
+  await page.getByRole('button', { name: 'Send reset instructions' }).click();
+  await expect(page.getByRole('status')).toContainText('If the account exists');
   const reset = await mailToken('owner@example.test', 'reset');
   await page.goto(`/#reset=${reset}`);
-  await expect(page.getByRole('heading', { name: 'Password baru' })).toBeVisible();
-  await page.getByLabel('Password baru', { exact: true }).fill('updated-browser-password-123');
-  await page.getByLabel('Ulangi password').fill('updated-browser-password-123');
-  await page.getByRole('button', { name: 'Simpan password' }).click();
-  await expect(page.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'New password' })).toBeVisible();
+  await page.getByLabel('New password', { exact: true }).fill('updated-browser-password-123');
+  await page.getByLabel('Confirm password').fill('updated-browser-password-123');
+  await page.getByRole('button', { name: 'Save password' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
   await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
   await page.getByLabel('Password', { exact: true }).fill('browser-test-password-123');
-  await page.getByRole('button', { name: 'Login', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Email atau password tidak sesuai');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Incorrect email or password');
   await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
   const [login] = await Promise.all([
     page.waitForResponse(response => response.url().endsWith('/api/auth/login') && response.request().method() === 'POST'),
-    page.getByRole('button', { name: 'Login', exact: true }).click(),
+    page.getByRole('button', { name: 'Sign in', exact: true }).click(),
   ]);
   expect(login.status(), await login.text()).toBe(200);
   await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
@@ -134,11 +145,17 @@ test('all workspace views use shared database content across accounts after clea
   await page.goto('/');
   await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
   await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
-  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   const nav = page.getByRole('navigation', { name: 'Main', exact: true });
   await expect(nav).toBeVisible();
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await expect(page.locator('.native-sync-status')).toBeHidden();
+  await expect(page.locator('.native-workspace-notice')).toBeHidden();
+  await expect(
+    page.locator(
+      '.native-workspace-notice [data-a="nativeRefresh"], .native-workspace-notice [data-a="nativeManage"], .native-workspace-notice [data-a="nativeSignOut"]',
+    ),
+  ).toHaveCount(0);
   await expect(page.getByText('Tersimpan di database')).toHaveCount(0);
   await expect(page.getByText('Website Redesign')).toHaveCount(0);
   for (const route of [
@@ -162,9 +179,9 @@ test('all workspace views use shared database content across accounts after clea
   await nav.locator('[data-r="home"]').first().click();
   await page.locator('button[data-a="newTask"]').first().click();
   await expect(page.getByRole('heading', { name: 'New project', exact: true })).toBeVisible();
-  await page.getByLabel('Project name', { exact: true }).fill('Restored local project');
+  await page.getByLabel('Project name', { exact: true }).fill('Proyek tim pengguna');
   await page.getByRole('button', { name: 'Create project', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Restored local project', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Proyek tim pengguna', exact: true })).toBeVisible();
   await page.locator('.content [data-a="go"][data-tab="board"]').click();
   await page.locator('button[data-a="newTask"]').first().click();
   await page.getByLabel('Task name', { exact: true }).fill('Restored local task');
@@ -189,8 +206,8 @@ test('all workspace views use shared database content across accounts after clea
   });
   await drag(page, page.locator('[data-drag-card]').first(), page.locator('[data-drop-col="review"]'));
   await expect(page.locator('[data-drop-col="review"] [data-drag-card]')).toHaveCount(1);
-  await expect(page.locator('.native-sync-status')).toContainText('Perubahan belum tersimpan');
-  await page.getByRole('button', { name: 'Coba simpan lagi', exact: true }).click();
+  await expect(page.locator('.native-sync-status')).toContainText('Your changes have not been saved');
+  await page.getByRole('button', { name: 'Try saving again', exact: true }).click();
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await page.unroute('**/content');
   await page.locator('.content [data-tab="calendar"]').click();
@@ -240,14 +257,14 @@ test('all workspace views use shared database content across accounts after clea
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await expect(nav.getByText('Restored local project', { exact: true })).toBeVisible();
+  await expect(nav.getByText('Proyek tim pengguna', { exact: true })).toBeVisible();
   await expect(page.getByText('Restored local task edited', { exact: true }).first()).toBeVisible();
   await nav.locator('[data-r="project"]').first().click();
   await expect(page.locator('[data-drop-col="review"] [data-drag-card]')).toHaveCount(1);
   await page.locator('[data-pop="filter"]').click();
   await page.locator('[data-a="addFilter"][data-f="status"]').click();
   await page.locator('[data-a="fToggleVal"][data-v="review"]').click();
-  await page.getByRole('heading', { name: 'Restored local project', exact: true }).click();
+  await page.getByRole('heading', { name: 'Proyek tim pengguna', exact: true }).click();
   await page.locator('.content [data-pop="sort"]').click();
   await page.locator('[data-a="setSort"][data-v="title"]').click();
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
@@ -284,25 +301,25 @@ test('all workspace views use shared database content across accounts after clea
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await expect(page.locator('.content .tab').filter({ hasText: 'Shared review view' })).toBeVisible();
   await page.locator('.content').getByRole('button', { name: 'Members', exact: true }).click();
-  await page.getByLabel('Proyek privat', { exact: true }).check();
+  await page.getByLabel('Private project', { exact: true }).check();
   await page.locator('[data-in="nativeProjectMember"]:not(:disabled)').check();
-  await page.getByRole('button', { name: 'Selesai', exact: true }).click();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
-  await page.locator('[data-a="nativeSignOut"]').click();
-  await expect(page.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
+  await signOut(page);
+  await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
   await page.getByLabel('Email', { exact: true }).fill('member@example.test');
   await page.getByLabel('Password', { exact: true }).fill('member-browser-password-123');
-  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(nav).toBeVisible();
-  await expect(nav.getByText('Restored local project', { exact: true })).toBeVisible();
+  await expect(nav.getByText('Proyek tim pengguna', { exact: true })).toBeVisible();
   await expect(page.getByText('Restored local task edited', { exact: true }).first()).toBeVisible();
   await nav.locator('[data-r="project"]').first().click();
   await page.locator('.content .tab').filter({ hasText: 'Shared review view' }).click();
   await expect(page.locator('.content').getByText('Restored local task edited', { exact: true }).first()).toBeVisible();
   await expect(page.locator('.content input[data-in="viewQ"]')).toHaveValue('Restored');
   await page.locator('.content').getByRole('button', { name: 'Members', exact: true }).click();
-  await expect(page.getByLabel('Proyek privat', { exact: true })).toBeChecked();
-  await expect(page.getByLabel('Proyek privat', { exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Private project', { exact: true })).toBeChecked();
+  await expect(page.getByLabel('Private project', { exact: true })).toBeDisabled();
   expect(errors).toEqual([]);
 });
 
@@ -314,7 +331,7 @@ test('comments, original files, notifications and recurring tasks work across tw
   await page.goto('/');
   await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
   await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
-  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   const fixture = await page.evaluate(async () => {
     const identity = await (await fetch('/api/auth/me')).json(),
@@ -378,8 +395,8 @@ test('comments, original files, notifications and recurring tasks work across tw
   await expect(drawer.locator('.cmt .txt')).toHaveText(original);
   await drawer.getByRole('button', { name: 'Edit comment', exact: true }).click();
   const updated = `Updated review @${fixture.memberName}`;
-  await page.getByLabel('Komentar', { exact: true }).fill(updated);
-  await page.getByRole('button', { name: 'Simpan komentar', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Edit comment', exact: true }).getByLabel('Comment', { exact: true }).fill(updated);
+  await page.getByRole('button', { name: 'Save comment', exact: true }).click();
   await expect(drawer.locator('.cmt .txt')).toHaveText(updated);
   await drawer.getByRole('button', { name: 'Add reaction', exact: true }).click();
   await page.getByRole('button', { name: 'React 👍', exact: true }).click();
@@ -398,7 +415,7 @@ test('comments, original files, notifications and recurring tasks work across tw
     .locator('input[data-in="uploadFiles"]')
     .first()
     .setInputFiles({ name: 'shared-notes.txt', mimeType: 'text/plain', buffer: Buffer.from(bytes) });
-  await drawer.getByRole('button', { name: 'Coba upload lagi', exact: true }).click();
+  await drawer.getByRole('button', { name: 'Retry upload', exact: true }).click();
   await expect(drawer.locator('.attc').filter({ hasText: 'shared-notes.txt' })).toBeVisible();
   await page.unroute('**/files');
   const uploadCount = await page.evaluate(
@@ -408,12 +425,12 @@ test('comments, original files, notifications and recurring tasks work across tw
   expect(uploadCount).toBe(1);
   await drawer.locator('.attc').filter({ hasText: 'shared-notes.txt' }).click();
   const downloading = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Unduh file', exact: true }).click();
+  await page.getByRole('button', { name: 'Download file', exact: true }).click();
   const download = await downloading;
   expect(await readFile(await download.path(), 'utf8')).toBe(bytes);
   await page
     .getByRole('dialog')
-    .filter({ has: page.getByRole('button', { name: 'Unduh file', exact: true }) })
+    .filter({ has: page.getByRole('button', { name: 'Download file', exact: true }) })
     .getByRole('button', { name: 'Close', exact: true })
     .last()
     .click();
@@ -428,7 +445,7 @@ test('comments, original files, notifications and recurring tasks work across tw
     await memberPage.goto('/');
     await memberPage.getByLabel('Email', { exact: true }).fill('member@example.test');
     await memberPage.getByLabel('Password', { exact: true }).fill('member-browser-password-123');
-    await memberPage.getByRole('button', { name: 'Login', exact: true }).click();
+    await memberPage.getByRole('button', { name: 'Sign in', exact: true }).click();
     await memberPage.getByRole('navigation', { name: 'Main', exact: true }).locator('[data-r="inbox"]').click();
     let notification = memberPage.locator('.inbox-list [data-a="selNotif"]').filter({ hasText: updated });
     await expect(notification).toBeVisible();
@@ -448,7 +465,7 @@ test('comments, original files, notifications and recurring tasks work across tw
     await memberPage.locator('.drawer .cmt').filter({ hasText: updated }).getByRole('button', { name: 'Add reaction', exact: true }).click();
     await memberPage.getByRole('button', { name: 'React 🎉', exact: true }).click();
     await expect(memberPage.getByRole('button', { name: '🎉 1', exact: true })).toBeVisible();
-    await page.locator('.drawer').getByRole('button', { name: 'Muat data terbaru', exact: true }).click();
+    await page.locator('.drawer').getByRole('button', { name: 'Refresh data', exact: true }).click();
     await expect(drawer.locator('.cmt .txt').filter({ hasText: 'Member reply saved to the database' })).toBeVisible();
     await expect(drawer.getByRole('button', { name: '🎉 1', exact: true })).toBeVisible();
     await drawer.locator('[data-pop="recur"]').click();
@@ -473,9 +490,9 @@ test('comments, original files, notifications and recurring tasks work across tw
     );
     expect(count).toBe(2);
     await drawer.locator('.cmt').filter({ hasText: updated }).getByRole('button', { name: 'Delete comment', exact: true }).click();
-    await page.getByRole('button', { name: 'Hapus komentar', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Delete comment?', exact: true }).getByRole('button', { name: 'Delete comment', exact: true }).click();
     await expect(drawer.locator('.cmt .txt').filter({ hasText: updated })).toHaveCount(0);
-    await memberPage.locator('.drawer').getByRole('button', { name: 'Muat data terbaru', exact: true }).click();
+    await memberPage.locator('.drawer').getByRole('button', { name: 'Refresh data', exact: true }).click();
     await expect(memberPage.locator('.drawer .cmt .txt').filter({ hasText: updated })).toHaveCount(0);
     await expect(memberPage.locator('.drawer .cmt .txt').filter({ hasText: 'Member reply saved to the database' })).toBeVisible();
   } finally {
@@ -491,23 +508,23 @@ test('native settings save accounts, teams, manual guest invitations, milestones
   await page.goto('/');
   await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
   await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
-  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Anggota workspace', exact: true })).toBeVisible();
+  await openSettings(page);
+  await expect(page.getByRole('heading', { name: 'Workspace members', exact: true })).toBeVisible();
   const settings = async sec => {
     await page.locator(`.set-nav [data-sec="${sec}"]`).click();
   };
   await settings('profile');
-  await page.getByLabel('Nama lengkap', { exact: true }).fill('Browser Owner');
-  await page.getByLabel('Jabatan', { exact: true }).fill('Engineering Lead');
-  await page.getByRole('button', { name: 'Simpan profil', exact: true }).click();
+  await page.getByLabel('Full name', { exact: true }).fill('Browser Owner');
+  await page.getByLabel('Job title', { exact: true }).fill('Engineering Lead');
+  await page.getByRole('button', { name: 'Save profile', exact: true }).click();
   await expect.poll(async () => page.evaluate(async () => (await (await fetch('/api/account')).json()).user.name)).toBe('Browser Owner');
   await settings('teams');
-  await page.getByRole('button', { name: 'Buat tim', exact: true }).click();
-  await page.getByLabel('Nama tim', { exact: true }).fill('Native team');
+  await page.getByRole('button', { name: 'Create team', exact: true }).click();
+  await page.getByLabel('Team name', { exact: true }).fill('Native team');
   await page.locator('[data-team-member]').first().check();
-  await page.getByRole('button', { name: 'Simpan tim', exact: true }).click();
+  await page.getByRole('button', { name: 'Save team', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Native team', exact: true })).toBeVisible();
   const fixture = await page.evaluate(async () => {
     const identity = await (await fetch('/api/auth/me')).json(),
@@ -516,73 +533,73 @@ test('native settings save accounts, teams, manual guest invitations, milestones
   });
   await page.locator('[data-a="go"][data-r="project"][data-id="browser-collab"]').first().click();
   await page.locator('[data-a="go"][data-r="project"][data-tab="overview"]').first().click();
-  await page.getByRole('button', { name: 'Tambah milestone', exact: true }).click();
-  await page.getByLabel('Nama milestone', { exact: true }).fill('Real browser milestone');
-  await page.getByLabel('Tanggal target', { exact: true }).fill('2037-01-31');
-  await page.locator('.modal').getByRole('button', { name: 'Simpan', exact: true }).click();
+  await page.getByRole('button', { name: 'Add milestone', exact: true }).click();
+  await page.getByLabel('Milestone name', { exact: true }).fill('Real browser milestone');
+  await page.getByLabel('Target date', { exact: true }).fill('2037-01-31');
+  await page.locator('.modal').getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('Real browser milestone', { exact: true })).toBeVisible();
   await page.locator('[data-a="go"][data-r="project"][data-tab="calendar"]').first().click();
-  await page.getByRole('button', { name: 'Buat event', exact: true }).click();
-  await page.getByLabel('Judul event', { exact: true }).fill('Database planning meeting');
-  const day = await page.getByLabel('Tanggal', { exact: true }).inputValue();
-  await page.getByLabel('Jam mulai', { exact: true }).fill('10:30');
-  await page.getByLabel('Zona waktu (IANA)', { exact: true }).fill('Asia/Jakarta');
-  await page.getByLabel('Link meeting', { exact: true }).fill('https://meet.example.test/planning');
-  await page.locator('.modal').getByRole('button', { name: 'Simpan', exact: true }).click();
+  await page.getByRole('button', { name: 'Create event', exact: true }).click();
+  await page.getByLabel('Event title', { exact: true }).fill('Database planning meeting');
+  const day = await page.getByLabel('Date', { exact: true }).inputValue();
+  await page.getByLabel('Start time', { exact: true }).fill('10:30');
+  await page.getByLabel('Time zone (IANA)', { exact: true }).fill('Asia/Jakarta');
+  await page.getByLabel('Meeting link', { exact: true }).fill('https://meet.example.test/planning');
+  await page.locator('.modal').getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await expect(page.locator('.cal [data-pop="event"]').filter({ hasText: 'Database planning meeting' }).first()).toBeVisible();
   const saved = await page.evaluate(async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).events, fixture.ws);
   expect(saved.find(e => e.title === 'Database planning meeting').startsAt).toBe(day + 'T03:30:00.000Z');
-  await page.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
-  await page.getByRole('button', { name: 'Undang anggota', exact: true }).click();
-  await page.getByLabel('Email penerima', { exact: true }).fill('native-guest@example.test');
+  await openSettings(page);
+  await page.getByRole('button', { name: 'Invite member', exact: true }).click();
+  await page.getByLabel('Recipient email', { exact: true }).fill('native-guest@example.test');
   await page.locator('#native-invite-role').selectOption('guest');
   await page.locator('#native-invite-project').selectOption('browser-collab');
   await page.locator('#native-invite-permission').selectOption('viewer');
-  await page.getByRole('button', { name: 'Buat undangan', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Link undangan siap', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Create invitation', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Invitation link ready', exact: true })).toBeVisible();
   const invitation = await page.locator('#native-invitation-link').inputValue();
   await page.locator('.modal [data-a="closeModal"]').first().click();
   const context = await browser.newContext({ baseURL: 'http://localhost:5173' }),
     guestPage = await context.newPage();
   try {
     await guestPage.goto(invitation);
-    await guestPage.getByLabel('Nama lengkap', { exact: true }).fill('Native Guest');
-    await guestPage.getByLabel('Password baru', { exact: true }).fill('native-guest-password-123');
-    await guestPage.getByRole('button', { name: 'Terima undangan', exact: true }).click();
+    await guestPage.getByLabel('Full name', { exact: true }).fill('Native Guest');
+    await guestPage.getByLabel('New password', { exact: true }).fill('native-guest-password-123');
+    await guestPage.getByRole('button', { name: 'Accept invitation', exact: true }).click();
     await expect(guestPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
     await guestPage.locator('[data-a="go"][data-r="project"][data-id="browser-collab"]').first().click();
     await guestPage.locator('.kcard').first().click();
     await expect(guestPage.locator('.drawer [data-a="toggleDone"]').first()).toBeDisabled();
     await expect(guestPage.locator('.drawer [data-a="postComment"]')).toBeDisabled();
     await guestPage.locator('.drawer [data-a="closeDrawer"]').click();
-    await guestPage.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+    await openSettings(guestPage);
     await guestPage.locator('.set-nav [data-sec="2fa"]').click();
-    await guestPage.getByLabel('Password saat ini', { exact: true }).fill('native-guest-password-123');
-    await guestPage.getByRole('button', { name: 'Mulai setup 2FA', exact: true }).click();
-    await expect(guestPage.getByAltText('QR setup authenticator')).toBeVisible();
+    await guestPage.getByLabel('Current password', { exact: true }).fill('native-guest-password-123');
+    await guestPage.getByRole('button', { name: 'Set up two-factor authentication', exact: true }).click();
+    await expect(guestPage.getByAltText('Authenticator setup QR code')).toBeVisible();
     const secret = await guestPage.locator('.set-body code').textContent();
     const { totp } = await import('../../server/mfa.js');
-    await guestPage.getByLabel('Kode authenticator', { exact: true }).fill(totp(secret, Math.floor(Date.now() / 30000)));
-    await guestPage.getByRole('button', { name: 'Aktifkan 2FA', exact: true }).click();
-    await expect(guestPage.getByRole('heading', { name: 'Kode pemulihan 2FA', exact: true })).toBeVisible();
+    await guestPage.getByLabel('Authenticator code', { exact: true }).fill(totp(secret, Math.floor(Date.now() / 30000)));
+    await guestPage.getByRole('button', { name: 'Enable two-factor authentication', exact: true }).click();
+    await expect(guestPage.getByRole('heading', { name: 'Two-factor recovery codes', exact: true })).toBeVisible();
     const codes = (await guestPage.locator('.set-body pre').textContent()).trim().split('\n');
     expect(codes).toHaveLength(10);
-    await guestPage.getByRole('button', { name: 'Sudah saya simpan', exact: true }).click();
-    await expect(guestPage.getByRole('heading', { name: 'Autentikasi dua langkah aktif', exact: true })).toBeVisible();
-    await guestPage.locator('[data-a="nativeSignOut"]').click();
-    await expect(guestPage.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
+    await guestPage.getByRole('button', { name: 'I have saved these codes', exact: true }).click();
+    await expect(guestPage.getByRole('heading', { name: 'Two-factor authentication enabled', exact: true })).toBeVisible();
+    await signOut(guestPage);
+    await expect(guestPage.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
     await guestPage.getByLabel('Email', { exact: true }).fill('native-guest@example.test');
     await guestPage.getByLabel('Password', { exact: true }).fill('native-guest-password-123');
-    await guestPage.getByRole('button', { name: 'Login', exact: true }).click();
-    await expect(guestPage.getByRole('heading', { name: 'Verifikasi dua langkah', exact: true })).toBeVisible();
-    await guestPage.getByLabel('Kode 2FA atau recovery code', { exact: true }).fill(codes[0]);
-    await guestPage.getByRole('button', { name: 'Verifikasi dan login', exact: true }).click();
+    await guestPage.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(guestPage.getByRole('heading', { name: 'Two-factor verification', exact: true })).toBeVisible();
+    await guestPage.getByLabel('Two-factor or recovery code', { exact: true }).fill(codes[0]);
+    await guestPage.getByRole('button', { name: 'Verify and sign in', exact: true }).click();
     await expect(guestPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
-    await guestPage.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+    await openSettings(guestPage);
     await guestPage.locator('.set-nav [data-sec="profile"]').click();
-    await guestPage.getByLabel('Nama lengkap', { exact: true }).fill('Updated Native Guest');
-    await guestPage.getByRole('button', { name: 'Simpan profil', exact: true }).click();
+    await guestPage.getByLabel('Full name', { exact: true }).fill('Updated Native Guest');
+    await guestPage.getByRole('button', { name: 'Save profile', exact: true }).click();
     await expect.poll(async () => guestPage.evaluate(async () => (await (await fetch('/api/account')).json()).user.name)).toBe('Updated Native Guest');
   } finally {
     await context.close();
@@ -599,6 +616,31 @@ test('native settings save accounts, teams, manual guest invitations, milestones
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('lang', 'id');
+  await expect(page.getByRole('navigation', { name: 'Main', exact: true }).getByText('Proyek tim pengguna', { exact: true })).toBeVisible();
+  await openSettings(page, 'language');
+  await page.locator('#native-language').selectOption('en-US');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('heading', { name: 'Language', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Interface language', exact: true })).toBeVisible();
+  await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  for (const [section, heading] of [
+    ['profile', 'Profile'],
+    ['password', 'Change password'],
+    ['sessions', 'Sign-in sessions'],
+    ['2fa', 'Two-factor authentication'],
+    ['workspace', 'Workspace'],
+    ['members', 'Workspace members'],
+    ['teams', 'Team'],
+    ['permissions', 'Permissions and access requests'],
+    ['notif-email', 'Email'],
+    ['notif-push', 'In-app notifications'],
+    ['datetime', 'Date and time'],
+  ]) {
+    await openSettings(page, section);
+    await expect(page.locator('.set-body').getByRole('heading', { name: heading, exact: true })).toBeVisible();
+  }
   const reloaded = await page.evaluate(async ws => await (await fetch(`/api/workspaces/${ws}/content`)).json(), fixture.ws);
   expect(reloaded.preferences.prefs.tz).toBe('Asia/Jakarta');
   expect(reloaded.projects.find(p => p.id === 'browser-collab').milestones.some(m => m.name === 'Real browser milestone')).toBe(true);
@@ -611,7 +653,7 @@ test('email preferences generate an actual queued email and unsubscribe confirms
   await page.goto('/');
   await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
   await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
-  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
   const fixture = await page.evaluate(async () => {
     const identity = await (await fetch('/api/auth/me')).json(),
@@ -631,7 +673,7 @@ test('email preferences generate an actual queued email and unsubscribe confirms
     await memberPage.goto('/');
     await memberPage.getByLabel('Email', { exact: true }).fill('member@example.test');
     await memberPage.getByLabel('Password', { exact: true }).fill('member-browser-password-123');
-    await memberPage.getByRole('button', { name: 'Login', exact: true }).click();
+    await memberPage.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(memberPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
     await memberPage.goto(`/?workspace=${fixture.ws}#email-settings`);
     await expect(memberPage.getByRole('heading', { name: 'Email', exact: true })).toBeVisible();
@@ -678,18 +720,18 @@ test('email preferences generate an actual queued email and unsubscribe confirms
     const token = delivered.text.match(/#unsubscribe=([a-f0-9]{64})/)[1],
       unsubscribePage = await context.newPage();
     await unsubscribePage.goto('/#unsubscribe=' + token);
-    await expect(unsubscribePage.getByRole('heading', { name: 'Pengaturan email aktivitas', exact: true })).toBeVisible();
+    await expect(unsubscribePage.getByRole('heading', { name: 'Activity email settings', exact: true })).toBeVisible();
     expect(unsubscribePage.url()).not.toContain(token);
     let prefs = (await pool.query('SELECT data FROM workspace_preferences WHERE workspace_id=$1 AND user_id=$2', [fixture.ws, fixture.member])).rows[0].data;
     expect(prefs.notifPrefs.email_mention).toBe(true);
-    await unsubscribePage.getByRole('button', { name: 'Nonaktifkan email aktivitas', exact: true }).click();
-    await expect(unsubscribePage.getByRole('heading', { name: 'Email aktivitas dinonaktifkan', exact: true })).toBeVisible();
+    await unsubscribePage.getByRole('button', { name: 'Disable activity emails', exact: true }).click();
+    await expect(unsubscribePage.getByRole('heading', { name: 'Activity emails disabled', exact: true })).toBeVisible();
     prefs = (await pool.query('SELECT data FROM workspace_preferences WHERE workspace_id=$1 AND user_id=$2', [fixture.ws, fixture.member])).rows[0].data;
     expect(prefs.notifPrefs.email_mention).toBe(false);
     expect(prefs.notifPrefs.email_digest).toBe(false);
     expect(prefs.notifPrefs.push_mention).toBe(false);
     await page.goto(`/?workspace=${fixture.ws}#email-settings`);
-    await page.getByRole('button', { name: 'Muat status email', exact: true }).click();
+    await page.getByRole('button', { name: 'Load email status', exact: true }).click();
     await expect(page.locator('.set-body')).toContainText('member@example.test');
     expect(await page.locator('.set-body').textContent()).not.toContain(token);
   } finally {

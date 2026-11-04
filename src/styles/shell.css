@@ -287,6 +287,9 @@ svg.logo {
   color: var(--text-2);
   font-size: 12px;
 }
+.native-workspace-notice[hidden] {
+  display: none;
+}
 .native-workspace-notice > span {
   flex: 1;
   min-width: 160px;

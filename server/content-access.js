@@ -9,13 +9,13 @@ export async function contentAccess(db, workspace, user, { project, task, lock =
   let item;
   if (task) {
     item = (await db.query('SELECT data FROM tasks WHERE workspace_id=$1 AND id=$2', [workspace, task])).rows[0]?.data;
-    if (!item) fail(404, 'Task tidak ditemukan.');
-    if (project && project !== item.project) fail(400, 'Task bukan bagian dari proyek ini.');
+    if (!item) fail(404, 'Task not found.');
+    if (project && project !== item.project) fail(400, 'This task does not belong to the project.');
     project = item.project;
   }
   const p = (await db.query('SELECT data FROM projects WHERE workspace_id=$1 AND id=$2', [workspace, project])).rows[0]?.data;
-  if (!canReadProject(p, user, role)) fail(404, 'Proyek tidak ditemukan atau tidak dapat diakses.');
-  if (!projectAllows(p, user, role, action)) fail(403, 'Anda tidak memiliki izin untuk mengubah konten ini.');
+  if (!canReadProject(p, user, role)) fail(404, 'Project not found or access denied.');
+  if (!projectAllows(p, user, role, action)) fail(403, 'You do not have permission to edit this content.');
   return { role, project: p, task: item };
 }
 export function activity(db, workspace, actor, project, task, verb) {

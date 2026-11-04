@@ -85,7 +85,7 @@ export async function queueEmailJobs(pool, { now = new Date(), limit = 100 } = {
       await queueMail(db, {
         to: person.email,
         kind: 'digest',
-        subject: 'Ringkasan harian',
+        subject: 'Daily digest',
         body: '',
         workspaceId: person.workspace_id,
         userId: person.user_id,

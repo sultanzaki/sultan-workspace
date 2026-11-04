@@ -15,7 +15,7 @@ import { registerAccounts, beginMfaLogin, profile } from './accounts.js';
 import { registerAdministration, acceptProjectInvitation } from './administration.js';
 import { email, password, name, tokenSchema, token, digest, hashPassword, verifyPassword, parse, fail, HttpError, limit, membership } from './security.js';
 
-const genericReset = { message: 'Jika akun terdaftar, instruksi reset password akan dikirim.' };
+const genericReset = { message: 'If the account exists, password reset instructions will be sent.' };
 const publicUser = user => ({ id: user.id, email: user.email, name: user.name });
 const audit = (db, ws, actor, action, subject = null) =>
   db.query('INSERT INTO audit_events(workspace_id,actor_id,action,subject_id) VALUES ($1,$2,$3,$4)', [ws, actor, action, subject]);
@@ -55,7 +55,7 @@ export async function createApp(pool, config) {
     res.set('Cache-Control', 'no-store');
     res.set('Vary', 'Cookie');
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-      if (!config.allowedOrigins.includes(req.get('origin'))) return next(new HttpError(403, 'Origin permintaan tidak diizinkan.'));
+      if (!config.allowedOrigins.includes(req.get('origin'))) return next(new HttpError(403, 'Request origin is not allowed.'));
       if (!req.is('application/json')) return next(new HttpError(415, 'Gunakan application/json.'));
     }
     next();
@@ -85,9 +85,8 @@ export async function createApp(pool, config) {
   }
   async function authenticated(req, res, next) {
     req.session = await currentSession(req);
-    if (!req.session) fail(401, 'Silakan login kembali.');
-    if (!['GET', 'HEAD'].includes(req.method) && req.get('x-csrf-token') !== req.session.csrf_token)
-      fail(403, 'Token keamanan tidak valid. Muat ulang halaman.');
+    if (!req.session) fail(401, 'Please sign in again.');
+    if (!['GET', 'HEAD'].includes(req.method) && req.get('x-csrf-token') !== req.session.csrf_token) fail(403, 'Invalid security token. Refresh the page.');
     next();
   }
   async function issueSession(db, req, userId, remember = false, mfaVerifiedAt = null) {
@@ -114,7 +113,7 @@ export async function createApp(pool, config) {
       `SELECT i.*, w.name AS workspace_name FROM invitations i JOIN workspaces w ON w.id=i.workspace_id WHERE token_hash=$1 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>now() ${lock ? 'FOR UPDATE OF i' : ''}`,
       [digest(raw)],
     );
-    if (!rows.length) fail(400, 'Undangan tidak valid atau sudah kedaluwarsa.');
+    if (!rows.length) fail(400, 'This invitation is invalid or has expired.');
     return rows[0];
   }
 
@@ -128,16 +127,16 @@ export async function createApp(pool, config) {
     res.json({ available: users.rowCount === 0 });
   });
   app.post('/api/auth/setup', async (req, res) => {
-    if (!config.BOOTSTRAP_TOKEN) fail(404, 'Setup owner belum diaktifkan atau sudah ditutup.');
+    if (!config.BOOTSTRAP_TOKEN) fail(404, 'Owner setup is disabled or has already been completed.');
     await limit(pool, `owner-bootstrap:${req.ip}`, 5, 900);
     const input = parse(z.object({ setupToken: z.string().min(32).max(256), email, name, workspace: name, password }).strict(), req.body);
-    if (!timingSafeEqual(Buffer.from(digest(input.setupToken)), Buffer.from(digest(config.BOOTSTRAP_TOKEN)))) fail(403, 'Kunci setup tidak sesuai.');
+    if (!timingSafeEqual(Buffer.from(digest(input.setupToken)), Buffer.from(digest(config.BOOTSTRAP_TOKEN)))) fail(403, 'Incorrect setup key.');
     await bootstrap(pool, { email: input.email, name: input.name, workspace: input.workspace, password: input.password });
-    res.status(201).json({ message: 'Akun owner berhasil dibuat. Silakan login.' });
+    res.status(201).json({ message: 'Owner account created. Please sign in.' });
   });
   app.get('/api/internal/maintenance', async (req, res) => {
     if (!config.CRON_SECRET || !timingSafeEqual(Buffer.from(digest(req.get('authorization') || '')), Buffer.from(digest(`Bearer ${config.CRON_SECRET}`)))) {
-      fail(401, 'Akses tidak diizinkan.');
+      fail(401, 'Access denied.');
     }
     res.json(await app.locals.maintain({ maxMessages: 100 }));
   });
@@ -159,11 +158,11 @@ export async function createApp(pool, config) {
     const { rows } = await pool.query('SELECT * FROM users WHERE email=$1', [input.email]);
     const user = rows[0];
     const valid = await verifyPassword(input.password, user?.password_hash || dummyPassword);
-    if (!valid || !user || user.disabled_at) fail(401, 'Email atau password tidak sesuai.');
+    if (!valid || !user || user.disabled_at) fail(401, 'Incorrect email or password.');
     const session = await transaction(pool, async db => {
       // Serialize with password reset so a stale password cannot create a session after reset.
       const { rows: latest } = await db.query('SELECT password_hash,disabled_at FROM users WHERE id=$1 FOR UPDATE', [user.id]);
-      if (latest[0].password_hash !== user.password_hash || latest[0].disabled_at) fail(401, 'Email atau password tidak sesuai.');
+      if (latest[0].password_hash !== user.password_hash || latest[0].disabled_at) fail(401, 'Incorrect email or password.');
       const challenge = await beginMfaLogin(db, user, input.remember);
       if (challenge) return { challenge };
       return issueSession(db, req, user.id, input.remember);
@@ -190,7 +189,7 @@ export async function createApp(pool, config) {
     await authLimit(req, 'accept');
     const input = parse(z.object({ token: tokenSchema, name: name.optional(), password: password.optional() }).strict(), req.body);
     const existingSession = await currentSession(req);
-    if (existingSession && req.get('x-csrf-token') !== existingSession.csrf_token) fail(403, 'Muat ulang halaman sebelum menerima undangan.');
+    if (existingSession && req.get('x-csrf-token') !== existingSession.csrf_token) fail(403, 'Refresh the page before accepting the invitation.');
     // Work-factor outside the transaction; token is rechecked under a lock before use.
     const hash = input.password ? await hashPassword(input.password) : null;
     const result = await transaction(pool, async db => {
@@ -200,12 +199,12 @@ export async function createApp(pool, config) {
       const { rows } = await db.query('SELECT * FROM users WHERE email=$1 FOR UPDATE', [invite.email]);
       let user = rows[0];
       if (user) {
-        if (!existingSession || existingSession.user_id !== user.id || user.disabled_at) fail(401, 'Login dengan akun penerima undangan untuk melanjutkan.');
+        if (!existingSession || existingSession.user_id !== user.id || user.disabled_at) fail(401, 'Sign in with the invited account to continue.');
         const { rowCount } = await db.query('SELECT 1 FROM sessions WHERE token_hash=$1 AND expires_at>now()', [existingSession.token_hash]);
-        if (!rowCount) fail(401, 'Silakan login kembali.');
+        if (!rowCount) fail(401, 'Please sign in again.');
       } else {
-        if (existingSession) fail(409, 'Logout terlebih dahulu untuk membuat akun penerima undangan.');
-        if (!input.name || !hash) fail(400, 'Nama dan password minimal 12 karakter diperlukan.');
+        if (existingSession) fail(409, 'Sign out before creating the invited account.');
+        if (!input.name || !hash) fail(400, 'A name and a password of at least 12 characters are required.');
         user = { id: randomUUID(), email: invite.email, name: input.name };
         await db.query('INSERT INTO users(id,email,name,password_hash,email_verified_at) VALUES ($1,$2,$3,$4,now())', [user.id, user.email, user.name, hash]);
       }
@@ -224,7 +223,7 @@ export async function createApp(pool, config) {
     res.status(201).json({ user: publicUser(result.user) });
   });
   app.post('/api/auth/forgot-password', async (req, res) => {
-    if (!emailEnabled) fail(503, 'Pengiriman email belum diaktifkan. Hubungi admin untuk pemulihan akun.');
+    if (!emailEnabled) fail(503, 'Email delivery is disabled. Contact an administrator to recover your account.');
     const input = parse(z.object({ email }).strict(), req.body);
     await authLimit(req, 'reset', input.email);
     await transaction(pool, async db => {
@@ -237,7 +236,7 @@ export async function createApp(pool, config) {
       await queueMail(db, {
         to: input.email,
         subject: 'Reset password workspace',
-        body: `Buka tautan ini untuk mengganti password. Berlaku 30 menit dan hanya satu kali.\n${config.APP_ORIGIN}/#reset=${raw}`,
+        body: `Open this link to reset your password. It expires in 30 minutes and can only be used once.\n${config.APP_ORIGIN}/#reset=${raw}`,
         resetHash: hash,
       });
     });
@@ -249,20 +248,20 @@ export async function createApp(pool, config) {
     const hash = await hashPassword(input.password);
     await transaction(pool, async db => {
       const { rows } = await db.query('SELECT user_id FROM password_resets WHERE token_hash=$1', [digest(input.token)]);
-      if (!rows.length) fail(400, 'Tautan reset tidak valid atau sudah kedaluwarsa.');
+      if (!rows.length) fail(400, 'This reset link is invalid or has expired.');
       // All reset/issue operations take the user lock first, avoiding lock-order inversions.
       const user = await db.query('SELECT id FROM users WHERE id=$1 AND disabled_at IS NULL FOR UPDATE', [rows[0].user_id]);
-      if (!user.rowCount) fail(400, 'Tautan reset tidak valid atau sudah kedaluwarsa.');
+      if (!user.rowCount) fail(400, 'This reset link is invalid or has expired.');
       const reset = await db.query('SELECT 1 FROM password_resets WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE', [
         digest(input.token),
       ]);
-      if (!reset.rowCount) fail(400, 'Tautan reset tidak valid atau sudah kedaluwarsa.');
+      if (!reset.rowCount) fail(400, 'This reset link is invalid or has expired.');
       await db.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, rows[0].user_id]);
       await db.query('UPDATE password_resets SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL', [rows[0].user_id]);
       await db.query('DELETE FROM sessions WHERE user_id=$1', [rows[0].user_id]);
-      await queueSecurityMail(db, config, rows[0].user_id, 'Password akun telah direset. Seluruh sesi login lama dicabut.');
+      await queueSecurityMail(db, config, rows[0].user_id, 'Your password has been reset. All previous sessions have been revoked.');
     });
-    res.clearCookie(cookieName, cookieOptions).json({ message: 'Password diperbarui. Silakan login kembali.' });
+    res.clearCookie(cookieName, cookieOptions).json({ message: 'Password updated. Please sign in again.' });
   });
 
   const accountSecurity = registerAccounts(app, pool, config, {
@@ -294,7 +293,7 @@ export async function createApp(pool, config) {
     res.json(rows);
   });
 
-  app.use('/api', (req, res) => res.status(404).json({ error: 'Endpoint tidak ditemukan.' }));
+  app.use('/api', (req, res) => res.status(404).json({ error: 'Endpoint not found.' }));
   if (production && !config.serverless) {
     const dist = fileURLToPath(new URL('../dist/', import.meta.url));
     app.use(express.static(dist, { index: 'index.html' }));
@@ -303,15 +302,15 @@ export async function createApp(pool, config) {
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
     if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
-    if (error instanceof ZodError) return res.status(400).json({ error: 'ID atau parameter tidak valid.' });
-    if (error.type === 'entity.too.large') return res.status(413).json({ error: 'Permintaan terlalu besar.' });
-    if (error.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON tidak valid.' });
-    if (error.code === '23505') return res.status(409).json({ error: 'Data sudah ada atau sedang diproses. Muat ulang lalu coba lagi.' });
+    if (error instanceof ZodError) return res.status(400).json({ error: 'Invalid ID or parameter.' });
+    if (error.type === 'entity.too.large') return res.status(413).json({ error: 'Request is too large.' });
+    if (error.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON.' });
+    if (error.code === '23505') return res.status(409).json({ error: 'This data already exists or is being processed. Refresh and try again.' });
     if (['42P01', '3F000', '42703'].includes(error.code))
-      return res.status(503).json({ error: 'Jalankan migrasi database terbaru untuk fitur workspace terlebih dahulu.' });
+      return res.status(503).json({ error: 'Run the latest database migrations to enable workspace features.' });
     // Never log request bodies, SQL parameters, connection strings, or raw tokens.
     console.error('API operation failed:', error.code || error.name);
-    res.status(500).json({ error: 'Layanan belum dapat memproses permintaan. Coba lagi.' });
+    res.status(500).json({ error: 'The service cannot process this request yet. Try again.' });
   });
   return app;
 }
