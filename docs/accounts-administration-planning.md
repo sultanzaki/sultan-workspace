@@ -8,7 +8,7 @@ Login tetap native dengan backend Node.js. Supabase dipakai sebagai PostgreSQL, 
 2. Deploy aplikasi dengan `DATABASE_URL`, `DATABASE_CA_PEM`, dan `APP_ORIGIN` yang sudah bekerja. Undangan manual, profil, sesi, izin, milestone, dan kalender tidak membutuhkan SMTP atau credential baru.
 3. Untuk mengaktifkan setup 2FA, tambahkan **AUTH_ENCRYPTION_KEY** pada environment server Vercel lalu redeploy. Buat nilai acak 32 byte dalam base64, misalnya `openssl rand -base64 32`, dan simpan di pengelola secret. Jangan gunakan prefix `VITE_`. Kunci ini harus tetap sama pada deployment berikutnya; menggantinya sembarangan membuat secret authenticator yang ada tidak dapat dibaca. Cadangkan kunci bersama backup database secara aman.
 
-Perubahan ini menambah fitur melalui PR; tidak menjalankan migrasi pada database produksi atau mengganti konfigurasi Vercel secara otomatis. Jika PR sebelumnya belum digabung, merge berurutan: proyek/task → kolaborasi/otomatisasi → akun/administrasi/perencanaan.
+Perubahan ini menambah fitur melalui PR; tidak menjalankan migrasi pada database produksi atau mengganti konfigurasi Vercel secara otomatis. Pastikan seluruh perubahan fitur sudah berada di branch main sebelum deployment Production. Untuk PR bertingkat, gunakan PR rilis yang menyatukan cabang fitur ke main, atau ubah base PR berikutnya ke main sebelum merge.
 
 ## Akun dan keamanan
 

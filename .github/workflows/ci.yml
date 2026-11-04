@@ -23,6 +23,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      # Vercel's CommonJS loader cannot rely on Node's require(esm) interop.
+      NODE_OPTIONS: --no-experimental-require-module
       TEST_DATABASE_URL: postgresql://sultan:ci-only-not-for-deployment@127.0.0.1:5432/sultan_test
     steps:
       - uses: actions/checkout@v4

@@ -5,7 +5,7 @@ Implementasi ini mencakup undangan/kirim ulang undangan, reset password, mention
 ## Aktivasi di Vercel
 
 1. Jalankan seluruh [supabase-migration.sql](supabase-migration.sql) di **Supabase → SQL Editor → New query → Run** sebelum memakai versi aplikasi ini. Migrasi 007 menambahkan data email; akun dan data kerja yang ada dipertahankan.
-2. Di **Vercel → Project → Settings → Environment Variables**, isi untuk environment yang digunakan:
+2. Pastikan seluruh perubahan akun, kolaborasi, dan email sudah masuk ke branch **main** yang dipakai deployment Production. PR yang digabung ke cabang fitur belum otomatis memperbarui production. Setelah kode Resend tersedia di main, di **Vercel → Project → Settings → Environment Variables**, isi untuk environment yang digunakan:
 
    | Nama             | Nilai                                                                           |
    | ---------------- | ------------------------------------------------------------------------------- |

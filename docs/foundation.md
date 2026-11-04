@@ -173,3 +173,9 @@ Simpan teks lisensi MIT dan copyright notice asli dari pembuatnya saat tersedia,
 Fase 4–5 sudah mencakup komentar/mention, file asli, notifikasi, pengingat, task berulang, dan tautan langsung ke objek. Fase 6–8 mencakup MFA dan administrasi/perencanaan. Email melalui Resend tersedia sesuai [panduan email](email.md); billing dan object storage untuk file lebih besar tetap terpisah.
 
 Untuk email baru, gunakan [panduan Resend API](email.md). Dukungan SMTP di atas tetap berlaku sebagai alternatif.
+
+## Kompatibilitas runtime Vercel
+
+`sanitize-html` 2.18.1 tetap dipakai dengan patch keamanannya. Parser transitifnya dikunci melalui npm override ke `htmlparser2` 10.1.0, yang menyediakan ekspor CommonJS. Versi 12 hanya menyediakan ESM dan tidak dapat dimuat oleh `require()` pada loader Vercel, sehingga bisa mematikan Function sebelum handler memberi respons JSON.
+
+CI menjalankan build dan pengujian dengan `NODE_OPTIONS=--no-experimental-require-module`, serta menguji impor entrypoint API dan penyaringan HTML melalui endpoint task. Pertahankan `package-lock.json` dan gunakan `npm ci` agar deployment menggunakan versi yang telah diuji. Perbaikan ini tidak memerlukan environment variable baru atau migrasi tambahan di luar 001–007.

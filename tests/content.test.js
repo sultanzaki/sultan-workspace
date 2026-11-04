@@ -130,6 +130,32 @@ test('shared projects/tasks have real persistence, authorization and conflict co
     assert.equal(r.status, 400);
     assert.equal((await snapshot()).tasks[0].assignee, member);
   });
+  await t.test('the production sanitizer strips executable HTML and encoded protocols while retaining supported formatting', async () => {
+    const original = (await snapshot()).tasks.find(t => t.id === 't1');
+    const cases = [
+      ['<p onclick="evil()">Safe <strong>bold</strong></p><script>evil()</script>', '<p>Safe <strong>bold</strong></p>'],
+      ['<a href="jav&#x61;script:evil()" onmouseover="evil()">link</a>', '<a>link</a>'],
+      ['<a href="data:text/html;base64,PHNjcmlwdD4=">payload</a><p style="color:red">text</p>', '<a>payload</a><p>text</p>'],
+      ['<svg><a xlink:href="javascript:evil()">bad</a></svg><img src=x onerror="evil()">', '<a>bad</a>'],
+      ['<a href="jav\u0000ascript:evil()">link</a>', '<a>link</a>'],
+      [
+        '<a href="https://example.test/?a=1&amp;b=2" rel="noopener">HTTPS</a><a href="mailto:team@example.test">Mail</a>',
+        '<a href="https://example.test/?a=1&amp;b=2" rel="noopener">HTTPS</a><a href="mailto:team@example.test">Mail</a>',
+      ],
+      [
+        '<p>First</p><ul><li>One</li><li><em>Two</em></li></ul><pre><code>&lt;script&gt;</code></pre>',
+        '<p>First</p><ul><li>One</li><li><em>Two</em></li></ul><pre><code>&lt;script&gt;</code></pre>',
+      ],
+    ];
+    for (const [desc, expected] of cases) {
+      const current = (await snapshot()).tasks.find(t => t.id === 't1');
+      const result = await write(owner, [operation('task', { ...current, desc })]);
+      assert.equal(result.status, 200, JSON.stringify(result.data));
+      assert.equal(result.data.tasks.find(t => t.id === 't1').desc, expected);
+    }
+    const current = (await snapshot()).tasks.find(t => t.id === 't1');
+    assert.equal((await write(owner, [operation('task', { ...current, desc: original.desc })])).status, 200);
+  });
   await t.test('task status, order, dates, labels and subtask completion persist across reads', async () => {
     const current = (await snapshot()).tasks[0];
     const r = await write(user, [
