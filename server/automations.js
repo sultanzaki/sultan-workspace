@@ -112,21 +112,26 @@ export async function dueReminders(db, workspace, { now = new Date(), force = fa
     [workspace, now, force],
   );
   if (!check.rowCount) return 0;
-  const today = iso(now),
-    tomorrow = shiftDate(today, 1);
   const rows = (
     await db.query(
-      `SELECT t.data,p.data AS project FROM tasks t JOIN projects p ON p.workspace_id=t.workspace_id AND p.id=t.project_id
-    WHERE t.workspace_id=$1 AND t.data->>'due'<=$2 AND t.data->>'status'<>'done' AND coalesce((t.data->>'archived')::boolean,false)=false
-    AND coalesce((p.data->>'archived')::boolean,false)=false
-    AND NOT EXISTS(SELECT 1 FROM user_notifications n WHERE n.workspace_id=t.workspace_id AND n.task_id=t.id
-      AND n.recipient_id=coalesce((t.data->>'assignee')::uuid,(p.data->>'lead')::uuid)
-      AND n.event_key='deadline:'||t.id||':'||(t.data->>'due')||':'||CASE WHEN t.data->>'due'<$3 THEN 'overdue' WHEN t.data->>'due'=$3 THEN 'today' ELSE 'tomorrow' END)`,
-      [workspace, tomorrow, today],
+      `WITH candidates AS (
+    SELECT t.id,t.workspace_id,t.data,p.data AS project,
+      coalesce((t.data->>'assignee')::uuid,(p.data->>'lead')::uuid) AS recipient,
+      to_char($2::timestamptz AT TIME ZONE coalesce(tz.name,'UTC'),'YYYY-MM-DD') AS today,
+      to_char(($2::timestamptz AT TIME ZONE coalesce(tz.name,'UTC')) + interval '1 day','YYYY-MM-DD') AS tomorrow
+    FROM tasks t JOIN projects p ON p.workspace_id=t.workspace_id AND p.id=t.project_id
+    LEFT JOIN workspace_preferences prefs ON prefs.workspace_id=t.workspace_id AND prefs.user_id=coalesce((t.data->>'assignee')::uuid,(p.data->>'lead')::uuid)
+    LEFT JOIN pg_timezone_names tz ON tz.name=prefs.data#>>'{prefs,tz}'
+    WHERE t.workspace_id=$1 AND t.data->>'status'<>'done' AND coalesce((t.data->>'archived')::boolean,false)=false
+      AND coalesce((p.data->>'archived')::boolean,false)=false
+  ) SELECT data,project,today FROM candidates c WHERE data->>'due'<=tomorrow
+    AND NOT EXISTS(SELECT 1 FROM user_notifications n WHERE n.workspace_id=c.workspace_id AND n.task_id=c.id AND n.recipient_id=c.recipient
+      AND n.event_key='deadline:'||c.id||':'||(c.data->>'due')||':'||CASE WHEN c.data->>'due'<c.today THEN 'overdue' WHEN c.data->>'due'=c.today THEN 'today' ELSE 'tomorrow' END)`,
+      [workspace, now],
     )
   ).rows;
   const notifications = [];
-  for (const { data: task, project } of rows) {
+  for (const { data: task, project, today } of rows) {
     const due = task.due,
       kind = due < today ? 'overdue' : due === today ? 'today' : 'tomorrow';
     notifications.push({

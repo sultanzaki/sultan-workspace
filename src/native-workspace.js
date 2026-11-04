@@ -1,3 +1,4 @@
+import { applyTranslations } from './core/translations.js';
 import './demo.js';
 import { getWorkspaceSession } from './core/workspace-session.js';
 import { A, IN } from './actions/actions.js';
@@ -9,6 +10,11 @@ import { openModal } from './overlays/modals.js';
 import { DRAG } from './actions/drag-drop.js';
 import { createContentSync } from './core/content-sync.js';
 import { localWorkspaceKey } from './core/workspace-session.js';
+import { initAccounts } from './core/accounts-client.js';
+import { initAdministration } from './core/administration-client.js';
+import { initPlanning } from './core/planning-client.js';
+import { initPermissions } from './core/permissions-client.js';
+import { workspaceData } from './core/workspace-session.js';
 import { initCollaboration } from './core/collaboration-client.js';
 
 const session = getWorkspaceSession();
@@ -53,7 +59,15 @@ const sync = createContentSync({
     projects: S.data.projects,
     tasks: S.data.tasks,
     savedViews: S.data.savedViews,
-    preferences: { prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed, projectOrder: S.data.projOrder, notifPrefs: S.data.notifPrefs },
+    events: S.data.events,
+    preferences: {
+      prefs: S.prefs,
+      views: S.views,
+      collapsed: S.ui.collapsed,
+      projectOrder: S.data.projOrder,
+      notifPrefs: S.data.notifPrefs,
+      favorites: S.data.favorites,
+    },
   }),
   request: async (method, body) => {
     try {
@@ -73,7 +87,7 @@ const sync = createContentSync({
   apply: content => {
     session.contentRevision = content.revision;
     const attachments = new Map(S.data.tasks.map(task => [task.id, task.attachments]));
-    for (const key of ['projects', 'tasks', 'savedViews', 'activity']) S.data[key] = content[key];
+    for (const key of ['projects', 'tasks', 'savedViews', 'activity', 'events']) S.data[key] = content[key];
     if (!session.collabPending || session.collabRefreshing) {
       S.data.files = content.files || [];
       S.data.notifs = content.notifs || [];
@@ -88,6 +102,18 @@ const sync = createContentSync({
     if (content.preferences.views) S.views = content.preferences.views;
     if (content.preferences.prefs) Object.assign(S.prefs, content.preferences.prefs, { name: session.user.name });
     S.data.notifPrefs = content.preferences.notifPrefs || {};
+    S.data.favorites = content.preferences.favorites || {
+      tasks: content.tasks.filter(t => t.fav).map(t => t.id),
+      projects: content.projects.filter(p => p.fav).map(p => p.id),
+    };
+    if (content.preferences.collapsed !== undefined) S.ui.collapsed = content.preferences.collapsed;
+    if (content.directory) {
+      const directory = workspaceData({ ...session, content });
+      for (const key of ['ws', 'members', 'teams']) S.data[key] = directory[key];
+      Object.assign(session.workspace, content.directory);
+      const workspace = S.data.workspaces.find(w => w.id === session.workspace.id);
+      if (workspace) Object.assign(workspace, { name: S.data.ws.name, slug: content.directory.slug, c: S.data.ws.c });
+    }
     renderSynced();
   },
   status: (state, message) => {
@@ -176,7 +202,7 @@ setInterval(() => {
     .catch(() => {});
 }, 10000);
 window.addEventListener('beforeunload', event => {
-  if (sync.hasUnsavedContent() || session.collabPending || S.ui.uploads?.length) {
+  if (sync.hasUnsavedContent() || (session.collabPending && !session.redirecting) || S.ui.uploads?.length) {
     event.preventDefault();
     event.returnValue = '';
   }
@@ -193,6 +219,7 @@ IN.nativeProjectPrivate = el => {
 IN.nativeProjectMember = el => {
   const project = proj(el.dataset.id);
   project.members = el.checked ? [...new Set([...project.members, el.dataset.mid])] : project.members.filter(id => id !== el.dataset.mid);
+  if (!el.checked && project.permissions) delete project.permissions[el.dataset.mid];
   save();
   render();
 };
@@ -203,7 +230,9 @@ A.newTask = el => {
     A.newProject();
     return;
   }
-  newTask(el);
+  const explicit = el?.dataset.project || (S.ui.route === 'project' ? S.ui.params.id : null);
+  const preferred = explicit || visibleProjects().find(p => session.canProject?.(p))?.id;
+  newTask({ dataset: { ...el?.dataset, ...(preferred ? { project: preferred } : {}) } });
 };
 const pick = A.popPick;
 A.popPick = el => {
@@ -298,4 +327,28 @@ document.addEventListener('visibilitychange', () => {
 });
 setInterval(checkSession, 60000);
 initCollaboration({ session, sync, renderSynced });
+initAccounts({ session, renderSynced });
+initAdministration({ session, renderSynced });
+initPlanning({ session, sync });
+initPermissions({ session });
+const previousRender = session.onRender;
+session.onRender = () => {
+  previousRender?.();
+  applyTranslations();
+};
+if (!/^#(task|project|file)=/.test(location.hash) && ['home', 'mytasks', 'inbox'].includes(S.prefs.home)) S.ui.route = S.prefs.home;
+for (const [action, key, collection] of [
+  ['toggleFavProj', 'projects', 'projects'],
+  ['toggleFavTask', 'tasks', 'tasks'],
+])
+  A[action] = el => {
+    const item = S.data[collection].find(x => x.id === el.dataset.id);
+    if (!item) return;
+    const values = new Set(S.data.favorites[key]);
+    values.has(item.id) ? values.delete(item.id) : values.add(item.id);
+    S.data.favorites[key] = [...values];
+    item.fav = values.has(item.id);
+    save();
+    render();
+  };
 render();

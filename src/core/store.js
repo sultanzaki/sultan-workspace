@@ -1,3 +1,4 @@
+import { projectAllows } from './permissions.js';
 /* ---------- store ---------- */
 import { TODAY, diffD, iso, parse, uid } from './utils.js';
 import { PCOLORS, TEAMS_SEED } from './constants.js';
@@ -14,7 +15,7 @@ export const DEFAULT_PREFS = {
   weekStart: 1,
   dateFmt: 'MMM d',
   lang: 'English (US)',
-  tz: '(GMT-07:00) Pacific Time',
+  tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   motion: 'system',
   home: 'home',
   openTasks: 'drawer',
@@ -53,7 +54,7 @@ export const S = {
     route: 'home',
     params: {},
     history: [],
-    collapsed: !!saved?.collapsed,
+    collapsed: serverPreferences?.collapsed ?? !!saved?.collapsed,
     mnav: false,
     expanded: { p1: true },
     drawer: null,
@@ -118,7 +119,8 @@ export const visibleProjects = () =>
     .projOrder.map(proj)
     .filter(Boolean)
     .filter(p => !p.archived);
-export const canSee = p => !!p && (!p.private || p.members.includes(D().me) || ['owner', 'admin'].includes(workspaceSession?.workspace.role));
+export const canSee = p =>
+  !!p && (workspaceSession ? projectAllows(p, D().me, workspaceSession.workspace.role, 'read') : !p.private || p.members.includes(D().me));
 export const tasksOf = pid => D().tasks.filter(t => t.project === pid && !t.archived);
 export const allTasks = () => D().tasks.filter(t => !t.archived && !proj(t.project)?.archived && canSee(proj(t.project)));
 export const isOver = t => t.due && t.status !== 'done' && diffD(parse(t.due), TODAY) < 0;

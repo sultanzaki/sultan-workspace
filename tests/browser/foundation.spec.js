@@ -48,7 +48,7 @@ test('owner invites a member; member joins, reloads and logs out with no demo da
   await page.getByLabel('Password', { exact: true }).fill('browser-test-password-123');
   await page.getByRole('button', { name: 'Login', exact: true }).click();
   await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+  await page.goto('/?manage=1');
   await expect(page.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
   await expect(page.getByText('Website Redesign')).toHaveCount(0);
   const ids = await page.locator('[id]').evaluateAll(elements => elements.map(element => element.id));
@@ -76,7 +76,7 @@ test('owner invites a member; member joins, reloads and logs out with no demo da
     ]);
     expect(accepted.status(), await accepted.text()).toBe(201);
     await expect(memberPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
-    await memberPage.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+    await memberPage.goto('/?manage=1');
     await expect(memberPage.getByRole('heading', { name: 'Tim browser', exact: true })).toBeVisible();
     await expect(memberPage.locator('img')).toHaveCount(0);
     await expect(memberPage.getByRole('heading', { name: 'Undang anggota' })).toHaveCount(0);
@@ -456,5 +456,127 @@ test('comments, original files, notifications and recurring tasks work across tw
   } finally {
     await memberContext.close();
   }
+  expect(errors).toEqual([]);
+});
+
+test('native settings save accounts, teams, manual guest invitations, milestones, events and personal preferences', async ({ page, browser }) => {
+  test.setTimeout(120000);
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/');
+  await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('updated-browser-password-123');
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Anggota workspace', exact: true })).toBeVisible();
+  const settings = async sec => {
+    await page.locator(`.set-nav [data-sec="${sec}"]`).click();
+  };
+  await settings('profile');
+  await page.getByLabel('Nama lengkap', { exact: true }).fill('Browser Owner');
+  await page.getByLabel('Jabatan', { exact: true }).fill('Engineering Lead');
+  await page.getByRole('button', { name: 'Simpan profil', exact: true }).click();
+  await expect.poll(async () => page.evaluate(async () => (await (await fetch('/api/account')).json()).user.name)).toBe('Browser Owner');
+  await settings('teams');
+  await page.getByRole('button', { name: 'Buat tim', exact: true }).click();
+  await page.getByLabel('Nama tim', { exact: true }).fill('Native team');
+  await page.locator('[data-team-member]').first().check();
+  await page.getByRole('button', { name: 'Simpan tim', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Native team', exact: true })).toBeVisible();
+  const fixture = await page.evaluate(async () => {
+    const identity = await (await fetch('/api/auth/me')).json(),
+      ws = identity.workspaces[0].id;
+    return { ws, user: identity.user.id };
+  });
+  await page.locator('[data-a="go"][data-r="project"][data-id="browser-collab"]').first().click();
+  await page.locator('[data-a="go"][data-r="project"][data-tab="overview"]').first().click();
+  await page.getByRole('button', { name: 'Tambah milestone', exact: true }).click();
+  await page.getByLabel('Nama milestone', { exact: true }).fill('Real browser milestone');
+  await page.getByLabel('Tanggal target', { exact: true }).fill('2037-01-31');
+  await page.locator('.modal').getByRole('button', { name: 'Simpan', exact: true }).click();
+  await expect(page.getByText('Real browser milestone', { exact: true })).toBeVisible();
+  await page.locator('[data-a="go"][data-r="project"][data-tab="calendar"]').first().click();
+  await page.getByRole('button', { name: 'Buat event', exact: true }).click();
+  await page.getByLabel('Judul event', { exact: true }).fill('Database planning meeting');
+  const day = await page.getByLabel('Tanggal', { exact: true }).inputValue();
+  await page.getByLabel('Jam mulai', { exact: true }).fill('10:30');
+  await page.getByLabel('Zona waktu (IANA)', { exact: true }).fill('Asia/Jakarta');
+  await page.getByLabel('Link meeting', { exact: true }).fill('https://meet.example.test/planning');
+  await page.locator('.modal').getByRole('button', { name: 'Simpan', exact: true }).click();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await expect(page.locator('.cal [data-pop="event"]').filter({ hasText: 'Database planning meeting' }).first()).toBeVisible();
+  const saved = await page.evaluate(async ws => (await (await fetch(`/api/workspaces/${ws}/content`)).json()).events, fixture.ws);
+  expect(saved.find(e => e.title === 'Database planning meeting').startsAt).toBe(day + 'T03:30:00.000Z');
+  await page.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+  await page.getByRole('button', { name: 'Undang anggota', exact: true }).click();
+  await page.getByLabel('Email penerima', { exact: true }).fill('native-guest@example.test');
+  await page.locator('#native-invite-role').selectOption('guest');
+  await page.locator('#native-invite-project').selectOption('browser-collab');
+  await page.locator('#native-invite-permission').selectOption('viewer');
+  await page.getByRole('button', { name: 'Buat undangan', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Link undangan siap', exact: true })).toBeVisible();
+  const invitation = await page.locator('#native-invitation-link').inputValue();
+  await page.locator('.modal [data-a="closeModal"]').first().click();
+  const context = await browser.newContext({ baseURL: 'http://localhost:5173' }),
+    guestPage = await context.newPage();
+  try {
+    await guestPage.goto(invitation);
+    await guestPage.getByLabel('Nama lengkap', { exact: true }).fill('Native Guest');
+    await guestPage.getByLabel('Password baru', { exact: true }).fill('native-guest-password-123');
+    await guestPage.getByRole('button', { name: 'Terima undangan', exact: true }).click();
+    await expect(guestPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+    await guestPage.locator('[data-a="go"][data-r="project"][data-id="browser-collab"]').first().click();
+    await guestPage.locator('.kcard').first().click();
+    await expect(guestPage.locator('.drawer [data-a="toggleDone"]').first()).toBeDisabled();
+    await expect(guestPage.locator('.drawer [data-a="postComment"]')).toBeDisabled();
+    await guestPage.locator('.drawer [data-a="closeDrawer"]').click();
+    await guestPage.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+    await guestPage.locator('.set-nav [data-sec="2fa"]').click();
+    await guestPage.getByLabel('Password saat ini', { exact: true }).fill('native-guest-password-123');
+    await guestPage.getByRole('button', { name: 'Mulai setup 2FA', exact: true }).click();
+    await expect(guestPage.getByAltText('QR setup authenticator')).toBeVisible();
+    const secret = await guestPage.locator('.set-body code').textContent();
+    const { totp } = await import('../../server/mfa.js');
+    await guestPage.getByLabel('Kode authenticator', { exact: true }).fill(totp(secret, Math.floor(Date.now() / 30000)));
+    await guestPage.getByRole('button', { name: 'Aktifkan 2FA', exact: true }).click();
+    await expect(guestPage.getByRole('heading', { name: 'Kode pemulihan 2FA', exact: true })).toBeVisible();
+    const codes = (await guestPage.locator('.set-body pre').textContent()).trim().split('\n');
+    expect(codes).toHaveLength(10);
+    await guestPage.getByRole('button', { name: 'Sudah saya simpan', exact: true }).click();
+    await expect(guestPage.getByRole('heading', { name: 'Autentikasi dua langkah aktif', exact: true })).toBeVisible();
+    await guestPage.locator('[data-a="nativeSignOut"]').click();
+    await expect(guestPage.getByRole('heading', { name: 'Masuk ke workspace' })).toBeVisible();
+    await guestPage.getByLabel('Email', { exact: true }).fill('native-guest@example.test');
+    await guestPage.getByLabel('Password', { exact: true }).fill('native-guest-password-123');
+    await guestPage.getByRole('button', { name: 'Login', exact: true }).click();
+    await expect(guestPage.getByRole('heading', { name: 'Verifikasi dua langkah', exact: true })).toBeVisible();
+    await guestPage.getByLabel('Kode 2FA atau recovery code', { exact: true }).fill(codes[0]);
+    await guestPage.getByRole('button', { name: 'Verifikasi dan login', exact: true }).click();
+    await expect(guestPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
+    await guestPage.getByRole('button', { name: 'Kelola workspace', exact: true }).click();
+    await guestPage.locator('.set-nav [data-sec="profile"]').click();
+    await guestPage.getByLabel('Nama lengkap', { exact: true }).fill('Updated Native Guest');
+    await guestPage.getByRole('button', { name: 'Simpan profil', exact: true }).click();
+    await expect.poll(async () => guestPage.evaluate(async () => (await (await fetch('/api/account')).json()).user.name)).toBe('Updated Native Guest');
+  } finally {
+    await context.close();
+  }
+  await settings('datetime');
+  await page.locator('#native-timezone').selectOption('Asia/Jakarta');
+  await page.locator('#native-timeformat').selectOption('24');
+  await page.locator('#native-dateformat').selectOption('d/M');
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await settings('language');
+  await page.locator('#native-language').selectOption('id-ID');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'id');
+  await expect(page.getByRole('navigation', { name: 'Main', exact: true }).getByText('Beranda', { exact: true })).toBeVisible();
+  await expect(page.locator('.native-sync-status')).toHaveText('Tersimpan di database');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'id');
+  const reloaded = await page.evaluate(async ws => await (await fetch(`/api/workspaces/${ws}/content`)).json(), fixture.ws);
+  expect(reloaded.preferences.prefs.tz).toBe('Asia/Jakarta');
+  expect(reloaded.projects.find(p => p.id === 'browser-collab').milestones.some(m => m.name === 'Real browser milestone')).toBe(true);
+  expect(reloaded.directory.teams.some(t => t.name === 'Native team')).toBe(true);
   expect(errors).toEqual([]);
 });

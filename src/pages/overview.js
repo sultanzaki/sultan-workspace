@@ -12,7 +12,7 @@ export function pageOverview() {
   const counts = STATUSES.map(s => ({ s, n: all.filter(t => t.status === s.id).length }));
   const ms = ps
     .flatMap(p => (p.milestones || []).map(m => ({ ...m, p })))
-    .filter(m => diffD(parse(m.date), TODAY) >= 0)
+    .filter(m => !m.done && diffD(parse(m.date), TODAY) >= 0)
     .sort((a, b) => (a.date > b.date ? 1 : -1))
     .slice(0, 6);
   const load = D()

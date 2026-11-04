@@ -197,7 +197,7 @@ test('SQL Editor migrations and the Vercel function share the real database cont
       );
       assert.deepEqual(privileges.rows[0], { usage: false, create: false });
     }
-    assert.equal((await pool.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '3');
+    assert.equal((await pool.query('SELECT count(*) FROM schema_migrations')).rows[0].count, '6');
     await bootstrap(pool, { email: 'vercel-owner@example.test', name: 'Vercel Owner', workspace: 'Vercel Workspace', password: 'vercel-test-password-123' });
   });
   await t.test('failed initialization recovers after migration and concurrent requests reuse one pool', async () => {

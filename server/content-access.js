@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { fail, membership } from './security.js';
+import { projectAllows } from '../src/core/permissions.js';
 
-export const canReadProject = (project, user, role) => project && (!project.private || ['owner', 'admin'].includes(role) || project.members.includes(user));
-export async function contentAccess(db, workspace, user, { project, task, lock = true } = {}) {
+export const canReadProject = (project, user, role) => projectAllows(project, user, role, 'read');
+export async function contentAccess(db, workspace, user, { project, task, lock = true, action = 'read' } = {}) {
   if (!lock) await db.query('SELECT id FROM workspaces WHERE id=$1 FOR SHARE', [workspace]);
-  const role = await membership(db, workspace, user, ['owner', 'admin', 'member'], lock);
+  const role = await membership(db, workspace, user, ['owner', 'admin', 'member', 'guest'], lock);
   let item;
   if (task) {
     item = (await db.query('SELECT data FROM tasks WHERE workspace_id=$1 AND id=$2', [workspace, task])).rows[0]?.data;
@@ -14,6 +15,7 @@ export async function contentAccess(db, workspace, user, { project, task, lock =
   }
   const p = (await db.query('SELECT data FROM projects WHERE workspace_id=$1 AND id=$2', [workspace, project])).rows[0]?.data;
   if (!canReadProject(p, user, role)) fail(404, 'Proyek tidak ditemukan atau tidak dapat diakses.');
+  if (!projectAllows(p, user, role, action)) fail(403, 'Anda tidak memiliki izin untuk mengubah konten ini.');
   return { role, project: p, task: item };
 }
 export function activity(db, workspace, actor, project, task, verb) {

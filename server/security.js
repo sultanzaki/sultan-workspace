@@ -11,7 +11,7 @@ export const password = z.string().min(12).max(128);
 export const name = z.string().trim().min(1).max(100);
 export const uuid = z.string().uuid();
 export const tokenSchema = z.string().regex(/^[a-f0-9]{64}$/);
-export const role = z.enum(['owner', 'admin', 'member']);
+export const role = z.enum(['owner', 'admin', 'member', 'guest']);
 
 export async function hashPassword(value) {
   const salt = randomBytes(16).toString('hex');
@@ -50,7 +50,7 @@ export async function limit(db, key, max, seconds) {
   if (rows[0].count > max) fail(429, 'Terlalu banyak percobaan. Coba lagi nanti.');
 }
 
-export async function membership(db, workspaceId, userId, roles = ['owner', 'admin', 'member'], lock = false) {
+export async function membership(db, workspaceId, userId, roles = ['owner', 'admin', 'member', 'guest'], lock = false) {
   uuid.parse(workspaceId);
   if (lock) await db.query('SELECT id FROM workspaces WHERE id = $1 FOR UPDATE', [workspaceId]);
   const { rows } = await db.query('SELECT role FROM memberships WHERE workspace_id = $1 AND user_id = $2 AND active', [workspaceId, userId]);

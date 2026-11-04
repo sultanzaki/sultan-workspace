@@ -217,6 +217,9 @@ test('native authentication and workspace authorization against PostgreSQL', asy
       (await request(`/workspaces/${first.workspaceId}/members/${memberId}`, { method: 'PATCH', actor: admin, body: { active: false } })).status,
       204,
     );
+    assert.equal((await request(`/workspaces/${first.workspaceId}`, { actor: member })).status, 401);
+    assert.equal((await request(`/workspaces/${ws2}`, { actor: member })).status, 401);
+    member = await login('member@example.test', memberPassword);
     assert.equal((await request(`/workspaces/${first.workspaceId}`, { actor: member })).status, 404);
     assert.equal((await request(`/workspaces/${ws2}`, { actor: member })).status, 200);
     assert.deepEqual((await request(`/workspaces/${first.workspaceId}`, { actor: owner })).data.teams[0].members, []);

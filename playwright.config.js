@@ -4,6 +4,8 @@ import { testConfig } from './tests/database.js';
 testConfig();
 export default defineConfig({
   testDir: './tests/browser',
+  timeout: 60000,
+  expect: { timeout: 10000 },
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -24,6 +26,7 @@ export default defineConfig({
       DATABASE_URL: process.env.TEST_DATABASE_URL,
       APP_ORIGIN: 'http://localhost:5173',
       NODE_ENV: 'test',
+      AUTH_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
       MAIL_TRANSPORT: 'file',
       MAIL_DIRECTORY: '.local/e2e-mail',
       PORT: '3001',

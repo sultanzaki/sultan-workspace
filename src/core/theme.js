@@ -1,11 +1,14 @@
 /* ---------- theme ---------- */
-import { setDateFormat } from './utils.js';
+import { setDateFormat, setRegionalPreferences } from './utils.js';
 import { S } from './store.js';
 
 export function applyPrefs() {
   const r = document.documentElement,
     p = S.prefs;
+  setRegionalPreferences(p);
   setDateFormat(p.dateFmt);
+  r.setAttribute('spellcheck', p.spell === false ? 'false' : 'true');
+  r.lang = ['id-ID', 'Bahasa Indonesia'].includes(p.lang) ? 'id' : 'en';
   if (p.theme === 'system') r.removeAttribute('data-theme');
   else r.setAttribute('data-theme', p.theme);
   if (p.accent === 'indigo') r.removeAttribute('data-accent');

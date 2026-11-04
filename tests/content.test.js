@@ -155,11 +155,14 @@ test('shared projects/tasks have real persistence, authorization and conflict co
     assert.equal((await snapshot()).tasks[0].start, '2026-12-01');
   });
   await t.test('private projects never leak through reads, task writes or saved views', async () => {
-    const r = await write(owner, [operation('project', project('secret', { private: true })), operation('task', task('secretTask', 'secret'))]);
+    const r = await write(owner, [
+      operation('project', project('secret', { private: true })),
+      operation('task', task('secretTask', 'secret', { assignee: first.userId })),
+    ]);
     assert.equal(r.status, 200, JSON.stringify(r.data));
     assert.ok(!(await snapshot(user)).projects.some(p => p.id === 'secret'));
     assert.ok(!(await snapshot(user)).tasks.some(t => t.id === 'secretTask'));
-    assert.equal((await write(user, [operation('task', task('secretTask', 'secret'))])).status, 404);
+    assert.equal((await write(user, [operation('task', task('secretTask', 'secret', { assignee: first.userId }))])).status, 404);
     assert.equal((await write(user, [operation('savedView', { id: 'bad', project: 'secret', name: 'Bad', type: 'board', filters: [] })])).status, 404);
     assert.equal((await write(user, [operation('project', project('p1', { private: true, members: [member] }))])).status, 403);
   });

@@ -12,6 +12,7 @@ export function enhanceSelects(root = document) {
     sel.dataset.enhanced = '1';
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.disabled = sel.disabled;
     btn.className = 'select select-btn';
     btn.setAttribute('style', sel.getAttribute('style') || '');
     btn.setAttribute('aria-haspopup', 'listbox');
@@ -97,6 +98,7 @@ export const selectMenu = {
   },
   pick(i) {
     const { sel, btn } = this;
+    if (sel?.disabled) return;
     this.close(true);
     if (!sel || sel.selectedIndex === i) return;
     sel.selectedIndex = i;

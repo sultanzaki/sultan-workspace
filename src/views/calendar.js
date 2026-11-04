@@ -1,3 +1,4 @@
+import { eventSlot } from '../core/event-time.js';
 /* ---------- CALENDAR ---------- */
 import { MONL, TODAY, WD, addD, diffD, esc, fmtDate, iso, parse, sod } from '../core/utils.js';
 import { ic } from '../core/icons.js';
@@ -16,12 +17,12 @@ export function calendarHtml(ts, opt = {}) {
   const cur = parse(S.ui.calDate);
   const mode = S.ui.calMode;
   const evs = opt.events ? D().events.filter(e => !opt.project || e.project === opt.project) : [];
-  const itemsOn = ds => [...evs.filter(e => e.date === ds).map(e => ({ ev: e })), ...ts.filter(t => t.due === ds).map(t => ({ t }))];
+  const itemsOn = ds => [...evs.filter(e => eventSlot(e, S.prefs.tz).date === ds).map(e => ({ ev: e })), ...ts.filter(t => t.due === ds).map(t => ({ t }))];
   const wdn = Array.from({ length: 7 }, (_, i) => WD[(i + S.prefs.weekStart) % 7]);
   const chip = it => {
     if (it.ev) {
       const p = proj(it.ev.project);
-      return `<button class="cev event" style="--c:${pColor(p)}" data-a="pop" data-pop="event" data-id="${it.ev.id}" title="${esc(it.ev.title)} · ${it.ev.time}"><span class="num faint" style="font-size:11px">${it.ev.time}</span><span class="trunc">${esc(it.ev.title)}</span></button>`;
+      return `<button class="cev event" style="--c:${pColor(p)}" draggable="true" data-drag-event="${it.ev.id}" data-a="pop" data-pop="event" data-id="${it.ev.id}" title="${esc(it.ev.title)} · ${esc(eventSlot(it.ev, S.prefs.tz, S.prefs.timeFmt).label)}"><span class="num faint" style="font-size:11px">${esc(eventSlot(it.ev, S.prefs.tz, S.prefs.timeFmt).label)}</span><span class="trunc">${esc(it.ev.title)}</span></button>`;
     }
     const t = it.t;
     const p = proj(t.project);
@@ -42,7 +43,7 @@ export function calendarHtml(ts, opt = {}) {
           const today = diffD(d, TODAY) === 0;
           return `<div class="cday ${d.getMonth() !== cur.getMonth() ? 'out' : ''} ${today ? 'today' : ''}" data-drop-day="${ds}">
           <span class="dn" ${today ? 'aria-current="date"' : ''}>${d.getDate()}</span>
-          <button class="ibtn ibtn-xs add" data-a="newTask" data-due="${ds}" ${opt.project ? `data-project="${opt.project}"` : ''} aria-label="Add task on ${fmtDate(ds)}">${ic('plus', 13)}</button>
+          <button class="ibtn ibtn-xs add" data-a="nativeNewEvent" data-date="${ds}" ${opt.project ? `data-project="${opt.project}"` : ''} aria-label="Add event on ${fmtDate(ds)}">${ic('plus', 13)}</button>
           ${items.slice(0, 3).map(chip).join('')}
           ${items.length > 3 ? `<button class="cmore" data-a="pop" data-pop="daylist" data-date="${ds}" data-key="${opt.key || ''}">+${items.length - 3} more</button>` : ''}
         </div>`;
@@ -57,13 +58,13 @@ export function calendarHtml(ts, opt = {}) {
         const ds = iso(d);
         const items = itemsOn(ds).sort((a, b) => (a.ev ? 0 : 1) - (b.ev ? 0 : 1));
         const today = diffD(d, TODAY) === 0;
-        return `<div class="wcol"><div class="wcol-h ${today ? 'today' : ''}"><span class="n">${d.getDate()}</span><span class="muted" style="font-size:12px">${WD[d.getDay()]}</span><span class="sp"></span><button class="ibtn ibtn-xs" data-a="newTask" data-due="${ds}" ${opt.project ? `data-project="${opt.project}"` : ''} aria-label="Add task">${ic('plus', 13)}</button></div>
+        return `<div class="wcol"><div class="wcol-h ${today ? 'today' : ''}"><span class="n">${d.getDate()}</span><span class="muted" style="font-size:12px">${WD[d.getDay()]}</span><span class="sp"></span><button class="ibtn ibtn-xs" data-a="nativeNewEvent" data-date="${ds}" ${opt.project ? `data-project="${opt.project}"` : ''} aria-label="Add event">${ic('plus', 13)}</button></div>
         <div class="wcol-b" data-drop-day="${ds}">${
           items
             .map(it => {
               if (it.ev) {
                 const p = proj(it.ev.project);
-                return `<button class="wcard event" style="--c:${pColor(p)}" data-a="pop" data-pop="event" data-id="${it.ev.id}"><span class="t"><span class="pdot" style="--c:${pColor(p)};border-radius:50%"></span>${esc(it.ev.title)}</span><span class="m">${ic('clock', 11)}${it.ev.time} · ${esc(p.name)}</span></button>`;
+                return `<button class="wcard event" style="--c:${pColor(p)}" draggable="true" data-drag-event="${it.ev.id}" data-a="pop" data-pop="event" data-id="${it.ev.id}"><span class="t"><span class="pdot" style="--c:${pColor(p)};border-radius:50%"></span>${esc(it.ev.title)}</span><span class="m">${ic('clock', 11)}${esc(eventSlot(it.ev, S.prefs.tz, S.prefs.timeFmt).label)} · ${esc(p.name)}</span></button>`;
               }
               const t = it.t;
               const p = proj(t.project);
@@ -80,7 +81,7 @@ export function calendarHtml(ts, opt = {}) {
       <button class="btn btn-secondary btn-sm" data-a="calNav" data-d="0">Today</button>
       <div class="row" style="gap:0"><button class="ibtn ibtn-sm" data-a="calNav" data-d="-1" aria-label="Previous">${ic('chevron-left', 16)}</button><button class="ibtn ibtn-sm" data-a="calNav" data-d="1" aria-label="Next">${ic('chevron-right', 16)}</button></div>
       <h2 style="font-size:15px;font-weight:600;margin:0 4px;letter-spacing:-.01em" aria-live="polite">${label}</h2>
-      <span class="sp"></span>
+      <span class="sp"></span><button class="btn btn-secondary btn-sm" data-a="nativeNewEvent" ${opt.project ? `data-project="${opt.project}"` : ''}>Buat event</button>
       ${
         !opt.project && projs.length > 1
           ? `<span class="row hide-m" style="gap:10px;font-size:11.5px;color:var(--text-2);margin-right:8px">${projs

@@ -5,12 +5,14 @@ Aplikasi tim dengan **login native dan PostgreSQL**, siap dikoneksikan ke **Supa
 Fondasi yang sudah diimplementasikan:
 
 - Login/logout, cookie sesi aman, reset password, dan akun baru melalui undangan.
-- Workspace, role owner/admin/member, aktivasi anggota, tim, dan audit administrasi.
+- Workspace, role owner/admin/member/guest, izin viewer/commenter/editor, permintaan akses, tim, dan audit administrasi.
 - Proyek dan task bersama: CRUD, assignee, status, prioritas, tanggal, label, subtask, dependency, arsip, dan pemulihan.
 - Board/List/Table/Calendar/Timeline memakai data database yang sama, termasuk drag-and-drop, pencarian, filter, sorting, dan saved views.
 - Deteksi konflik edit, retry penyimpanan, serta pembatasan akses proyek privat di backend.
 - Komentar/mention, edit/hapus komentar, reaksi, file asli privat, serta aktivitas kolaborasi.
 - Inbox/notifikasi pribadi, status baca dan preferensi per akun, pengingat deadline, serta task berulang dari server.
+- Profil/foto, ganti password, pencabutan sesi, 2FA authenticator dan recovery code; undangan manual tanpa SMTP.
+- Milestone proyek, event kalender terpisah, dan preferensi pribadi termasuk favorit serta zona waktu.
 - Migrasi PostgreSQL dalam schema privat, antrean email dengan retry, serta validasi dan izin di backend.
 - Tes API dengan PostgreSQL sungguhan, browser tests, dan CI.
 
@@ -28,15 +30,15 @@ Buat owner pertama melalui `npm run owner:create` dengan JSON melalui stdin, kem
 
 ## Vercel dan migrasi Supabase
 
-API Vercel tersedia melalui `api/index.js`; frontend dan backend dideploy bersama. Login tidak membutuhkan SMTP. Tanpa SMTP, undangan dan pemulihan lewat email ditampilkan sebagai belum tersedia.
+API Vercel tersedia melalui `api/index.js`; frontend dan backend dideploy bersama. Login dan undangan lewat link manual tidak membutuhkan SMTP. Pengiriman undangan/pemulihan lewat email tersedia setelah SMTP dikonfigurasi.
 
 Untuk membuat tabel tanpa terminal, buka **Supabase → SQL Editor → New query**, salin seluruh [file migrasi SQL](docs/supabase-migration.sql), lalu klik **Run**. Setelah itu buat owner pertama melalui halaman `/#setup` dengan `BOOTSTRAP_TOKEN` di Vercel, atau gunakan CLI privat. Panduan konfigurasi Vercel dan pemeriksaannya ada di [docs/foundation.md](docs/foundation.md).
 
 ## Status integrasi
 
-Setelah login, tampilan workspace asli tersedia kembali, termasuk Projects, Tasks, board/list/table/calendar/timeline/files. Pengelolaan akun dan anggota tersedia melalui **Kelola workspace**.
+Setelah login, tampilan workspace asli tersedia kembali, termasuk Projects, Tasks, board/list/table/calendar/timeline/files. Pengelolaan akun dan anggota tersedia di **Settings**, juga melalui tombol **Kelola workspace**.
 
-**Proyek, task, saved views, komentar, file asli, dan notifikasi sudah tersimpan di PostgreSQL.** Akses mengikuti izin workspace/proyek. Preferensi tampilan dan notifikasi disimpan per akun. Perubahan anggota lain dimuat sekitar setiap 10 detik saat halaman aktif dan tidak sedang diedit. Email tetap ditunda. Lihat [panduan fase 4–5](docs/collaboration.md) untuk batas file, task berulang, dan pengingat.
+**Proyek, task, saved views, komentar, file asli, dan notifikasi sudah tersimpan di PostgreSQL.** Akses mengikuti izin workspace/proyek. Preferensi tampilan dan notifikasi disimpan per akun. Perubahan anggota lain dimuat sekitar setiap 10 detik saat halaman aktif dan tidak sedang diedit. Untuk aktivasi fase 6–8, termasuk kunci enkripsi 2FA, lihat [panduan akun/administrasi/perencanaan](docs/accounts-administration-planning.md). Email menunggu konfigurasi SMTP. Lihat [panduan fase 4–5](docs/collaboration.md) untuk batas file, task berulang, dan pengingat.
 
 **Upgrade dari versi sebelumnya:** sebelum merge/deploy, jalankan seluruh [file migrasi SQL terbaru](docs/supabase-migration.sql) di Supabase SQL Editor. Migrasi lama dilewati; `003_collaboration_automation.sql` menambahkan tabel komentar, isi file, notifikasi, dan catatan otomatisasi tanpa menghapus akun/proyek/task. Data proyek/task browser lama dapat dipindahkan lewat **Impor data lokal lama** pada akun dan browser asal; data demo tidak diimpor otomatis.
 

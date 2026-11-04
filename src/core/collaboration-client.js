@@ -45,7 +45,12 @@ export function initCollaboration({ session, sync, renderSynced }) {
     session.collabPending = (session.collabPending || 0) + 1;
     const result = chain.then(async () => {
       await sync.flush();
-      await fn();
+      const outcome = await fn();
+      if (outcome?.redirect) {
+        session.redirecting = true;
+        location.assign(outcome.redirect);
+        return;
+      }
       await sync.flush();
       session.collabRefreshing = true;
       try {
@@ -65,6 +70,7 @@ export function initCollaboration({ session, sync, renderSynced }) {
       });
     return chain;
   }
+  session.perform = perform;
   const updateComment = comment => {
     const i = S.data.comments.findIndex(item => item.id === comment.id);
     if (i < 0) S.data.comments.push(comment);
@@ -408,6 +414,7 @@ export function initCollaboration({ session, sync, renderSynced }) {
     const [, kind, id] = match;
     if (kind === 'task' && task(id)) A.openTask({ dataset: { id } });
     else if (kind === 'project' && proj(id)) go('project', { id, tab: 'board' });
+    else if (kind === 'project') queueMicrotask(() => session.requestProjectAccess?.(id));
     else if (kind === 'file' && S.data.files.some(file => file.id === id)) A.previewFile({ dataset: { id } });
     else toast('Item tidak ditemukan atau Anda tidak memiliki akses.', { kind: 'err' });
   }

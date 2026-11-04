@@ -29,13 +29,14 @@ export function kcard(t, opt = {}) {
   </div>`;
 }
 export function boardHtml(ts, key, opt = {}) {
-  return `<div class="board" data-keep="board:${key}">${STATUSES.map(s => {
-    const col = ts.filter(t => t.status === s.id).sort((a, b) => a.order - b.order);
-    const ck = key + ':' + s.id;
-    if (S.ui.collapsedCols[ck])
-      return `<div class="bcol collapsed" data-a="toggleCol" data-ck="${ck}" data-drop-col="${s.id}" data-key="${key}" role="button" aria-label="Expand ${s.name}" title="Expand">${stIcon(s.id)}<span class="vname">${s.name}<span class="faint">${col.length}</span></span></div>`;
-    const comp = S.ui.composer && S.ui.composer.ctx === key && S.ui.composer.group === s.id;
-    return `<section class="bcol" data-drop-col="${s.id}" data-key="${key}" aria-label="${s.name}">
+  return `<div class="board" data-keep="board:${key}">${STATUSES.filter(s => S.prefs.showDoneBoard !== false || s.id !== 'done')
+    .map(s => {
+      const col = ts.filter(t => t.status === s.id).sort((a, b) => a.order - b.order);
+      const ck = key + ':' + s.id;
+      if (S.ui.collapsedCols[ck])
+        return `<div class="bcol collapsed" data-a="toggleCol" data-ck="${ck}" data-drop-col="${s.id}" data-key="${key}" role="button" aria-label="Expand ${s.name}" title="Expand">${stIcon(s.id)}<span class="vname">${s.name}<span class="faint">${col.length}</span></span></div>`;
+      const comp = S.ui.composer && S.ui.composer.ctx === key && S.ui.composer.group === s.id;
+      return `<section class="bcol" data-drop-col="${s.id}" data-key="${key}" aria-label="${s.name}">
       <div class="bcol-h">${stIcon(s.id)}<span>${s.name}</span><span class="cnt">${col.length}</span>
         <span class="acts"><button class="ibtn ibtn-xs" data-a="startComposer" data-ctx="${key}" data-group="${s.id}" data-gb='${JSON.stringify({ status: s.id, ...(opt.project ? { project: opt.project } : {}) })}' data-tip="Add task" aria-label="Add task to ${s.name}">${ic('plus', 14)}</button><button class="ibtn ibtn-xs" data-a="ctxBtn" data-ctx="column" data-id="${s.id}" data-key="${key}" aria-label="Column options">${ic('ellipsis', 14)}</button></span></div>
       <div class="bcol-b" data-col-body="${s.id}">
@@ -47,5 +48,6 @@ export function boardHtml(ts, key, opt = {}) {
         }
       </div>
     </section>`;
-  }).join('')}</div>`;
+    })
+    .join('')}</div>`;
 }

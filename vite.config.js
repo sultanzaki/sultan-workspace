@@ -49,5 +49,6 @@ function lucideSubset() {
 
 export default defineConfig({
   plugins: [lucideSubset()],
+  build: { rollupOptions: { output: { manualChunks: { 'calendar-time': ['luxon'] } } } },
   server: { port: 5173, strictPort: true, proxy: { '/api': 'http://127.0.0.1:3001' } },
 });
