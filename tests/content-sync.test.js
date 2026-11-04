@@ -14,6 +14,56 @@ test('server attachment metadata is excluded from task mutations', () => {
     [],
   );
 });
+test('autosave groups keystrokes and has a one-second deadline during continuous edits', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let current = { projects: [], tasks: [], savedViews: [], preferences: {} };
+  const bodies = [];
+  const sync = createContentSync({
+    initial: initial(),
+    capture: () => current,
+    apply: value => {
+      current = { projects: value.projects, tasks: [], savedViews: [], preferences: value.preferences };
+    },
+    status: () => {},
+    backup: () => {},
+    request: async (method, body) => {
+      bodies.push(clone(body));
+      return { ...initial(), revision: body.revision + 1, projects: [body.operations[0].value], preferences: body.preferences };
+    },
+  });
+  sync.schedule();
+  t.mock.timers.tick(1000);
+  assert.equal(bodies.length, 0, 'An unchanged render must not make a save request');
+  current.projects.push({ id: 'p', name: 'First' });
+  sync.schedule();
+  t.mock.timers.tick(100);
+  current.projects[0].name = 'Latest';
+  sync.schedule();
+  t.mock.timers.tick(149);
+  assert.equal(bodies.length, 0);
+  t.mock.timers.tick(1);
+  assert.equal(bodies.length, 1, 'A short burst must produce one save after 150ms of quiet');
+  await sync.flush();
+  assert.equal(bodies[0].operations[0].value.name, 'Latest');
+  current.projects[0].name = 'Continuous 0';
+  sync.schedule();
+  for (let i = 1; i < 10; i++) {
+    t.mock.timers.tick(100);
+    assert.equal(bodies.length, 1);
+    current.projects[0].name = 'Continuous ' + i;
+    sync.schedule();
+  }
+  t.mock.timers.tick(99);
+  assert.equal(bodies.length, 1);
+  t.mock.timers.tick(1);
+  assert.equal(bodies.length, 2, 'Continuous typing must not postpone the request beyond one second');
+  await sync.flush();
+  assert.equal(bodies[1].operations[0].value.name, 'Continuous 9');
+  sync.schedule();
+  t.mock.timers.tick(1000);
+  assert.equal(bodies.length, 2);
+  assert.equal(sync.isDirty(), false);
+});
 test('edits made during a request are flushed afterwards without being overwritten', async () => {
   let current = { projects: [{ id: 'p', name: 'first' }], tasks: [], savedViews: [], preferences: {} };
   let release, started;

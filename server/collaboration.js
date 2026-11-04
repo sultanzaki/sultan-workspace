@@ -103,17 +103,12 @@ async function commentNotifications(db, ws, user, project, comment, recipients =
   }
   await notifyMany(db, notifications);
 }
-export async function collaborationSnapshot(db, ws, user, projects) {
-  const row = (
-    await db.query(
-      `SELECT
+export const collaborationSnapshotSql = `SELECT
     coalesce((SELECT jsonb_agg(c) FROM (SELECT * FROM task_comments WHERE workspace_id=$1 AND project_id=ANY($3::text[]) ORDER BY created_at DESC,id DESC LIMIT 50)c),'[]') AS comments,
     coalesce((SELECT jsonb_agg(f) FROM (SELECT ${FILE_COLUMNS} FROM project_files WHERE workspace_id=$1 AND project_id=ANY($3::text[]))f),'[]') AS files,
     coalesce((SELECT jsonb_object_agg(task_id,n) FROM (SELECT task_id,count(*)::integer n FROM task_comments WHERE workspace_id=$1 AND project_id=ANY($3::text[]) GROUP BY task_id)c),'{}') AS totals,
-    coalesce((SELECT jsonb_agg(n) FROM (SELECT * FROM user_notifications WHERE workspace_id=$1 AND recipient_id=$2 AND project_id=ANY($3::text[]) ORDER BY created_at DESC LIMIT 300)n),'[]') AS notifications`,
-      [ws, user, projects],
-    )
-  ).rows[0];
+    coalesce((SELECT jsonb_agg(n) FROM (SELECT * FROM user_notifications WHERE workspace_id=$1 AND recipient_id=$2 AND project_id=ANY($3::text[]) ORDER BY created_at DESC LIMIT 300)n),'[]') AS notifications`;
+export function formatCollaborationSnapshot(row) {
   return {
     comments: row.comments.map(commentMetadata).reverse(),
     files: row.files.map(fileMetadata),
@@ -131,6 +126,7 @@ export async function collaborationSnapshot(db, ws, user, projects) {
     })),
   };
 }
+
 export async function taskResourcesMoved(db, ws, task, project) {
   for (const table of ['task_comments', 'project_files', 'user_notifications'])
     await db.query(`UPDATE ${table} SET project_id=$1 WHERE workspace_id=$2 AND task_id=$3`, [project, ws, task]);

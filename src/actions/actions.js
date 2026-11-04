@@ -1105,6 +1105,10 @@ A.saveView = el => {
   const k = 'p:' + el.dataset.id;
   openModal({ type: 'saveView', pid: el.dataset.id, nf: viewOf(k).filters.length });
 };
+IN.saveViewField = el => {
+  const modal = S.ui.modals.at(-1);
+  if (modal?.type === 'saveView' && ['name', 'layout'].includes(el.dataset.field)) modal[el.dataset.field] = el.value;
+};
 A.saveViewSubmit = () => {
   const m = S.ui.modals[S.ui.modals.length - 1];
   const name = $('#sv-name').value.trim() || 'Untitled view';

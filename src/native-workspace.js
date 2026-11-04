@@ -8,7 +8,7 @@ import { readApiResponse } from './foundation/http.js';
 import { S, proj, task, save, visibleProjects } from './core/store.js';
 import { openModal } from './overlays/modals.js';
 import { DRAG } from './actions/drag-drop.js';
-import { createContentSync } from './core/content-sync.js';
+import { createContentSync, syncStatusText } from './core/content-sync.js';
 import { localWorkspaceKey } from './core/workspace-session.js';
 import { initAccounts } from './core/accounts-client.js';
 import { initAdministration } from './core/administration-client.js';
@@ -26,8 +26,9 @@ try {
 }
 let pointerEditing = false,
   deferredRender = false;
+const editingControl = () => document.activeElement?.matches('input,textarea,select,[contenteditable=true],[role=listbox],[role=option]');
 function renderSynced() {
-  if (DRAG || pointerEditing || document.activeElement?.matches('input,textarea,[contenteditable=true]')) deferredRender = true;
+  if (DRAG || pointerEditing || editingControl()) deferredRender = true;
   else {
     deferredRender = false;
     render();
@@ -120,12 +121,13 @@ const sync = createContentSync({
     const previous = session.syncState;
     session.syncState = state;
     session.syncMessage = message;
-    const element = document.querySelector('.native-sync-status');
     if (['error', 'conflict'].includes(state) || ['error', 'conflict'].includes(previous)) renderSynced();
-    if (element)
-      element.textContent =
-        message ||
-        { saving: 'Menyimpan ke database…', saved: 'Tersimpan di database', conflict: 'Konflik perubahan', error: 'Perubahan belum tersimpan' }[state];
+    const element = document.querySelector('.native-sync-status');
+    if (element) {
+      element.textContent = syncStatusText(state, message);
+      element.hidden = !element.textContent;
+      element.dataset.state = state;
+    }
   },
   backup: content => {
     session.draftBackup = JSON.parse(JSON.stringify(content));
@@ -195,7 +197,7 @@ A.nativeRefresh = () => {
 };
 sync.schedule();
 setInterval(() => {
-  if (document.hidden || DRAG || pointerEditing || document.activeElement?.matches('input,textarea,[contenteditable=true]')) return;
+  if (document.hidden || DRAG || pointerEditing || editingControl()) return;
   void sync
     .refresh()
     .then(() => session.refreshComments?.())
