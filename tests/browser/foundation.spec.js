@@ -52,6 +52,13 @@ test('owner invites a member; member joins, reloads and logs out with no demo da
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
+  await expect(page).toHaveTitle('Team account · Sultan Workspace');
+  await expect(page.getByRole('link', { name: 'Sultan Workspace home' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/sultan-login-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/sultan-login-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
   await page.getByLabel('Password', { exact: true }).fill('incorrect');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -89,7 +96,7 @@ test('owner invites a member; member joins, reloads and logs out with no demo da
     await expect(memberPage.getByRole('navigation', { name: 'Main', exact: true })).toBeVisible();
     await memberPage.goto('/?manage=1');
     await expect(memberPage.getByRole('heading', { name: 'Team browser', exact: true })).toBeVisible();
-    await expect(memberPage.locator('img')).toHaveCount(0);
+    await expect(memberPage.locator('.foundation-main img')).toHaveCount(0);
     await expect(memberPage.getByRole('heading', { name: 'Invite member' })).toHaveCount(0);
     await expect(memberPage.getByRole('button', { name: 'Create team', exact: true })).toHaveCount(0);
     await expect(memberPage.getByText('Your role:')).toContainText('member');

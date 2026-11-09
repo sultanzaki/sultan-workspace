@@ -1,8 +1,8 @@
 {
-  "name": "gr8r-studio",
+  "name": "sultan-workspace",
   "version": "1.0.0",
   "private": true,
-  "description": "Gr8r Studio: a calm, structured project management workspace.",
+  "description": "Sultan Workspace: a calm, structured project management workspace.",
   "type": "module",
   "scripts": {
     "dev": "concurrently --kill-others-on-fail -n api,web \"npm:dev:api\" \"npm:dev:web\"",

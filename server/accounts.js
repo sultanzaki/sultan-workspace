@@ -187,7 +187,7 @@ export function registerAccounts(app, pool, config, { authenticated, issueSessio
       );
       return {
         secret,
-        otpauth: `otpauth://totp/${encodeURIComponent('Gr8r Studio:' + user.email)}?secret=${secret}&issuer=Gr8r%20Studio&algorithm=SHA1&digits=6&period=30`,
+        otpauth: `otpauth://totp/${encodeURIComponent('Sultan Workspace:' + user.email)}?secret=${secret}&issuer=Sultan%20Workspace&algorithm=SHA1&digits=6&period=30`,
       };
     });
     res.json(result);

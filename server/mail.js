@@ -61,7 +61,7 @@ export function createMailer(config, { fetchImpl = globalThis.fetch } = {}) {
           signal: AbortSignal.timeout(8000),
           headers: { Authorization: `Bearer ${config.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': 'sultan-mail/' + mail.id },
           body: JSON.stringify({
-            from: mail.context?.sender || config.MAIL_FROM,
+            from: mail.context?.sender || `Sultan Workspace <${config.MAIL_FROM}>`,
             to: [mail.recipient],
             subject: mail.subject,
             text: mail.body,
@@ -90,7 +90,7 @@ export function createMailer(config, { fetchImpl = globalThis.fetch } = {}) {
     if (transport) {
       try {
         const result = await transport.sendMail({
-          from: mail.context?.sender || config.MAIL_FROM,
+          from: mail.context?.sender || `Sultan Workspace <${config.MAIL_FROM}>`,
           to: mail.recipient,
           subject: mail.subject,
           text: mail.body,
@@ -152,7 +152,15 @@ export async function deliverOne(pool, deliver, config = { APP_ORIGIN: 'http://l
       }
       await db.query(
         "UPDATE mail_outbox SET recipient=$2,subject=$3,body=$4,html=$5,headers=$6,context=$7,rendered_at=now(),expires_at=least(expires_at,now()+interval '23 hours') WHERE id=$1",
-        [mail.id, content.recipient, content.subject, content.body, content.html, content.headers, { ...content.context, sender: config.MAIL_FROM }],
+        [
+          mail.id,
+          content.recipient,
+          content.subject,
+          content.body,
+          content.html,
+          content.headers,
+          { ...content.context, sender: `Sultan Workspace <${config.MAIL_FROM}>` },
+        ],
       );
     }
     const claimToken = randomUUID();
