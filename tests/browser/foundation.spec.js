@@ -216,6 +216,7 @@ test('all workspace views use shared database content across accounts after clea
   await expect(page.locator('.native-sync-status')).toContainText('Your changes have not been saved');
   await page.getByRole('button', { name: 'Try saving again', exact: true }).click();
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
+  await expect(page.locator('.native-workspace-notice')).toBeHidden();
   await page.unroute('**/content');
   await page.locator('.content [data-tab="calendar"]').click();
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
@@ -262,9 +263,16 @@ test('all workspace views use shared database content across accounts after clea
   shifted.setUTCDate(shifted.getUTCDate() + 2);
   expect(persisted.due).toBe(shifted.toISOString().slice(0, 10));
   await expect(page.locator('.native-sync-status')).toHaveAttribute('data-state', 'saved');
+  await openSettings(page, 'preferences');
+  await expect(page.getByRole('button', { name: 'Download draft', exact: true })).toBeVisible();
+  await page.reload();
+  await openSettings(page, 'preferences');
+  await expect(page.getByRole('button', { name: 'Download draft', exact: true })).toBeVisible();
+  await expect(page.locator('.native-workspace-notice')).toBeHidden();
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(nav.getByText('Proyek tim pengguna', { exact: true })).toBeVisible();
+  await expect(page.locator('.native-workspace-notice')).toBeHidden();
   await expect(page.getByText('Restored local task edited', { exact: true }).first()).toBeVisible();
   await nav.locator('[data-r="project"]').first().click();
   await expect(page.locator('[data-drop-col="review"] [data-drag-card]')).toHaveCount(1);
@@ -648,6 +656,24 @@ test('native settings save accounts, teams, manual guest invitations, milestones
     await openSettings(page, section);
     await expect(page.locator('.set-body').getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
+  await openSettings(page, 'members');
+  await expect(page.locator('.set-nav [data-sec="plan"], .set-nav [data-sec="payment"], .set-nav [data-sec="invoices"]')).toHaveCount(0);
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(page.locator('.native-member-row').first()).toBeVisible();
+    const overlaps = await page.locator('.native-member-row').evaluateAll(rows =>
+      rows.some(row => {
+        const boxes = [...row.children].map(el => el.getBoundingClientRect()).filter(b => b.width && b.height);
+        return boxes.some((a, i) =>
+          boxes.slice(i + 1).some(b => Math.min(a.right, b.right) > Math.max(a.left, b.left) + 1 && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) + 1),
+        );
+      }),
+    );
+    expect(overlaps).toBe(false);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `test-results/members-${width}.png`, fullPage: true, animations: 'disabled' });
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
   const reloaded = await page.evaluate(async ws => await (await fetch(`/api/workspaces/${ws}/content`)).json(), fixture.ws);
   expect(reloaded.preferences.prefs.tz).toBe('Asia/Jakarta');
   expect(reloaded.projects.find(p => p.id === 'browser-collab').milestones.some(m => m.name === 'Real browser milestone')).toBe(true);

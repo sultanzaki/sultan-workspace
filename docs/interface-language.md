@@ -9,3 +9,7 @@ Tambahkan copy baru dalam English di komponen atau server. Terjemahan Indonesian
 Baris tindakan permanen di atas workspace dihapus. Pengaturan tetap tersedia dari **Settings** di sidebar; keluar akun melalui **Account menu → Sign out**. Area sinkronisasi tidak terlihat saat bersih dan tetap menyediakan pesan kegagalan, retry, serta cadangan draft ketika diperlukan.
 
 Tidak ada migrasi atau environment variable tambahan. Pengujian browser memeriksa login dan pengaturan dalam English, perpindahan bahasa dan reload, konten proyek berbahasa Indonesia yang tetap utuh, pemulihan kegagalan simpan, serta akses pengaturan dan keluar akun melalui menu.
+
+Draft lama tersedia melalui **Settings → Preferences → Draft recovery**. Cadangan lokal tidak membuat banner dashboard terus muncul; pemulihan di banner hanya ditampilkan saat gagal/konflik simpan. Cadangan tetap dipertahankan setelah reload agar perubahan lama bisa diperiksa.
+
+Settings Members memakai baris responsif dengan nama/email yang dapat membungkus, kontrol role dan aktivasi terpisah, serta undangan yang dapat berpindah baris. Billing, Plan, Payment, Invoices, dan tindakan upgrade/downgrade demo dihapus.

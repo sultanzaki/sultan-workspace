@@ -2077,22 +2077,6 @@ A.disable2fa = () =>
       toast('Two-factor authentication turned off');
     },
   });
-A.changePlan = el => {
-  const v = el.dataset.v;
-  const price = { Free: 0, Team: 12, Business: 24 }[v];
-  confirmDlg({
-    title: `${v === 'Free' ? 'Downgrade' : 'Upgrade'} to ${v}?`,
-    body: `${D().members.length} members × $${price}/month = <b>$${D().members.length * price}/month</b>, prorated from today and billed to Visa ending 4242.`,
-    ok: v === 'Free' ? 'Downgrade' : `Upgrade to ${v}`,
-    icon: 'gem',
-    run: () => {
-      mutate(() => {
-        D().plan = v;
-      });
-      toast(`You're now on the ${v} plan`);
-    },
-  });
-};
 
 /* auth */
 A.auth = el => {
