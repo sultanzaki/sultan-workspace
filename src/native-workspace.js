@@ -126,7 +126,7 @@ const sync = createContentSync({
     const element = document.querySelector('.native-sync-status');
     if (element) {
       element.textContent = translate(syncStatusText(state, message), S.prefs.lang);
-      element.closest('.native-workspace-notice').hidden = !element.textContent && !session.hasLocalDraft && !session.draftBackup;
+      element.closest('.native-workspace-notice').hidden = !element.textContent && !session.hasLocalDraft;
       element.hidden = !element.textContent;
       element.dataset.state = state;
     }
@@ -273,7 +273,6 @@ for (const key of [
   'setup2fa',
   'verify2fa',
   'disable2fa',
-  'changePlan',
   'copyLink',
   'shareAdd',
   'shareInvite',

@@ -751,4 +751,6 @@ export const messages = [
   ['Dismiss', 'Tutup'],
   ['Too many attempts. Try again later.', 'Terlalu banyak percobaan. Coba lagi nanti.'],
   ['Request is too large.', 'Permintaan terlalu besar.'],
+  ['Draft recovery', 'Pemulihan draft'],
+  ['A previous unsaved draft is available on this browser.', 'Cadangan draft yang belum tersimpan tersedia di browser ini.'],
 ];

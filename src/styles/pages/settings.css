@@ -30,6 +30,43 @@
   max-width: 720px;
   padding: 32px 40px 80px;
 }
+.native-member-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(110px, auto) auto;
+  align-items: center;
+}
+.native-member-identity,
+.native-invitation-identity {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.native-member-row > .select-native {
+  display: none;
+}
+.native-member-row > .select-btn {
+  width: 120px;
+}
+.native-invitation-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.native-invitation-identity {
+  flex: 1 1 220px;
+}
+@media (max-width: 1100px) {
+  .native-member-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .native-member-row > .select-btn {
+    grid-column: 2;
+  }
+  .native-member-row > .btn {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
 .set-in h1 {
   font-size: var(--fs-xl);
   font-weight: 600;
