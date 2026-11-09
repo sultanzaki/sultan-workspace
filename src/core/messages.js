@@ -368,8 +368,8 @@ export const messages = [
   ['Duplicate changes are not allowed.', 'Perubahan ganda tidak valid.'],
   ['Message scheduled for retry.', 'Pesan dijadwalkan untuk dicoba kembali.'],
   [
-    'Automated Gr8r Studio account message. Do not share password reset links or invitation links with others.',
-    'Pesan otomatis akun Gr8r Studio. Jangan membagikan link reset password atau link undangan kepada orang lain.',
+    'Automated Sultan Workspace account message. Do not share password reset links or invitation links with others.',
+    'Pesan otomatis akun Sultan Workspace. Jangan membagikan link reset password atau link undangan kepada orang lain.',
   ],
   [
     'This message cannot be retried. Create a new invitation or password reset request if needed.',

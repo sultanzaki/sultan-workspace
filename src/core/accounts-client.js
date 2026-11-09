@@ -140,7 +140,7 @@ export function initAccounts({ session, renderSynced }) {
     void run(() => api('/account/mfa/disable', 'POST', input));
   };
   A.nativeDownloadRecovery = () => {
-    if (session.recoveryCodes) downloadText('gr8r-recovery-codes.txt', session.recoveryCodes.join('\n') + '\n');
+    if (session.recoveryCodes) downloadText('sultan-workspace-recovery-codes.txt', session.recoveryCodes.join('\n') + '\n');
   };
   A.nativeDismissRecovery = () => {
     session.recoveryCodes = null;

@@ -38,6 +38,8 @@ test('Resend transport uses a stable idempotency key and never exposes provider 
   assert.equal(requests[0].headers['Idempotency-Key'], requests[1].headers['Idempotency-Key']);
   assert.equal(requests[0].body, requests[1].body);
   assert.equal(JSON.parse(requests[0].body).from, 'original@example.test');
+  await send({ ...mail, id: randomUUID(), context: {} });
+  assert.equal(JSON.parse(requests[2].body).from, 'Sultan Workspace <sender@example.test>');
   const failed = createMailer(config, { fetchImpl: async () => new Response('private-provider-detail', { status: 429 }) });
   await assert.rejects(failed(mail), error => error.code === 'rate_limited' && !error.message.includes('private-provider-detail'));
   const permanent = createMailer(config, { fetchImpl: async () => new Response('private', { status: 422 }) });

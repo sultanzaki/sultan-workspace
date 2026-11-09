@@ -5,7 +5,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 export const workspaceLink = (config, ws, task) =>
   `${config.APP_ORIGIN}/?workspace=${encodeURIComponent(ws)}${task ? '#task=' + encodeURIComponent(task) : ''}`;
 export function emailLayout({ heading, paragraphs = [], items = [], action, footer = '' }) {
-  return `<!doctype html><html lang="en"><body style="margin:0;background:#f5f5f7;color:#242430;font-family:Arial,sans-serif"><main style="max-width:600px;margin:24px auto;background:#fff;padding:28px;border-radius:12px"><p style="color:#4b5bd6;font-weight:bold">Gr8r Studio</p><h1 style="font-size:22px">${esc(heading)}</h1>${paragraphs.map(p => `<p style="line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere">${esc(p)}</p>`).join('')}${items.map(i => `<section style="border-top:1px solid #ddd;padding:16px 0"><h2 style="font-size:16px"><a href="${esc(i.url)}">${esc(i.title)}</a></h2><p>${esc(i.detail)}</p>${i.snippet ? `<blockquote style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(i.snippet)}</blockquote>` : ''}</section>`).join('')}${action ? `<p><a href="${esc(action.url)}" style="display:inline-block;background:#4b5bd6;color:#fff;padding:12px 18px;border-radius:6px;text-decoration:none">${esc(action.label)}</a></p>` : ''}<footer style="margin-top:24px;font-size:12px;color:#666">${footer}</footer></main></body></html>`;
+  return `<!doctype html><html lang="en"><body style="margin:0;background:#f5f5f7;color:#242430;font-family:Arial,sans-serif"><main style="max-width:600px;margin:24px auto;background:#fff;padding:28px;border-radius:12px"><p style="color:#4b5bd6;font-weight:bold">Sultan Workspace</p><h1 style="font-size:22px">${esc(heading)}</h1>${paragraphs.map(p => `<p style="line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere">${esc(p)}</p>`).join('')}${items.map(i => `<section style="border-top:1px solid #ddd;padding:16px 0"><h2 style="font-size:16px"><a href="${esc(i.url)}">${esc(i.title)}</a></h2><p>${esc(i.detail)}</p>${i.snippet ? `<blockquote style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(i.snippet)}</blockquote>` : ''}</section>`).join('')}${action ? `<p><a href="${esc(action.url)}" style="display:inline-block;background:#4b5bd6;color:#fff;padding:12px 18px;border-radius:6px;text-decoration:none">${esc(action.label)}</a></p>` : ''}<footer style="margin-top:24px;font-size:12px;color:#666">${footer}</footer></main></body></html>`;
 }
 export async function activityContext(db, mail) {
   const person = (
@@ -121,7 +121,7 @@ export async function renderQueuedEmail(db, mail, config) {
       action: url?.startsWith(config.APP_ORIGIN + '/')
         ? { url, label: mail.kind === 'reset' ? 'Change password' : mail.kind === 'invitation' ? 'Accept invitation' : 'Open account' }
         : null,
-      footer: 'Automated Gr8r Studio account message. Do not share password reset links or invitation links with others.',
+      footer: 'Automated Sultan Workspace account message. Do not share password reset links or invitation links with others.',
     }),
   };
 }

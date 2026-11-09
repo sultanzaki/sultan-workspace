@@ -108,12 +108,12 @@ export function tryFocus(key) {
 }
 export function pageTitle() {
   const u = S.ui;
-  if (u.auth) return 'Gr8r Studio';
+  if (u.auth) return 'Sultan Workspace';
   let t = ROUTE_NAMES[u.route] || 'Not found';
   if (u.route === 'project' && proj(u.params.id)) t = `${(PTABS.find(x => x[0] === u.params.tab) || [0, 'Saved view'])[1]} · ${proj(u.params.id).name}`;
   if (u.route === 'member' && mem(u.params.id)) t = mem(u.params.id).name;
   if (u.route === 'team' && team(u.params.id)) t = team(u.params.id).name;
-  return `${t} · ${D().ws.name}`;
+  return `${t} · ${D().ws.name} · Sultan Workspace`;
 }
 /* Anything clickable is keyboard-reachable: non-native [data-a] controls get a role and a tab stop. */
 export function makeFocusable() {
